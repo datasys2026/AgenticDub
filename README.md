@@ -3,7 +3,7 @@
   <p>世界帧精彩</p>
   <p>基于AI大模型的视频字幕翻译和配音工具，语音识别，智能断句，专业级翻译，一键部署全流程</p>
 
-  其他语言: [English](README.md)
+  其他语言: [English](README_en.md)
 
 </div>
 
