@@ -2,9 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"krillin-ai/config"
 	"krillin-ai/internal/router"
+
+	"github.com/gin-gonic/gin"
 )
 
 type App struct {

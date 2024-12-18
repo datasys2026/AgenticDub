@@ -1,8 +1,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
 	"krillin-ai/internal/handler"
+	"krillin-ai/internal/service"
+
+	"github.com/gin-gonic/gin"
 )
 
 func SetupRouter(r *gin.Engine) {
@@ -12,4 +14,16 @@ func SetupRouter(r *gin.Engine) {
 		api.POST("/subtitleTask", hdl.StartSubtitleTask)
 		//api.GET("/subtitleTask", controllers.GetSubtitleTaskStatus)
 	}
+
+	// 提供静态文件
+	r.Static("/source", "./source")
+	r.Static("/static", "./static")
+
+	// 添加 API 路由
+	r.POST("/api/submit", gin.WrapF(service.RenderPage))
+
+	// 添加根路由
+	r.GET("/", func(c *gin.Context) {
+		c.File("./static/index.html")
+	})
 }

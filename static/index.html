@@ -1,0 +1,83 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+	<title>世界帧精彩</title>
+	<style>
+		body {
+			background-image: url('/source/subtitle.webp');
+			background-size: cover;
+			display: flex;
+			justify-content: center;
+			align-items: flex-start;
+			height: 100vh;
+			margin: 0;
+			font-family: Arial, sans-serif;
+			color: white;
+			text-shadow: 2px 2px 4px #000000;
+		}
+		.container {
+			background: rgba(0, 0, 0, 0.7);
+			padding: 30px;
+			border-radius: 15px;
+			text-align: center;
+			box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+			margin-top: 50px;
+		}
+		h1 {
+			margin-bottom: 30px;
+			font-size: 3em;
+			color: #FFD700;
+		}
+		input[type="text"] {
+			width: 80%;
+			padding: 15px;
+			margin: 20px 0;
+			border: none;
+			border-radius: 10px;
+			font-size: 1.2em;
+			box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+		}
+		button {
+			padding: 15px 30px;
+			border: none;
+			border-radius: 10px;
+			background-color: #FF4500;
+			color: white;
+			font-size: 1.2em;
+			cursor: pointer;
+			transition: background-color 0.3s, transform 0.3s;
+		}
+		button:hover {
+			background-color: #FF6347;
+			transform: scale(1.05);
+		}
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>世界帧精彩</h1>
+		<form id="linkForm">
+			<label for="link">输入链接:</label>
+			<input type="text" id="link" name="link" required>
+			<button type="submit">执行</button>
+		</form>
+	</div>
+	<script>
+		document.getElementById('linkForm').addEventListener('submit', function(event) {
+			event.preventDefault();
+			const link = document.getElementById('link').value;
+			fetch('/api/submit', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({ link: link })
+			})
+			.then(response => response.text())
+			.then(data => alert(data))
+			.catch(error => alert('请求失败: ' + error));
+		});
+	</script>
+</body>
+</html>
