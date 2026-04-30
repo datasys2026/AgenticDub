@@ -13,3 +13,6 @@ dist/
 # MACOS
 .DS_Store
 ._*
+
+# Binary
+krillin-ai

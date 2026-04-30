@@ -171,16 +171,18 @@ func (t *ReflectiveTranslator) buildReflectPrompt(chunk *Chunk) string {
 		lines[i] = fmt.Sprintf("%d. Original: %s\n   Direct: %s", i+1, seg.Original, seg.Direct)
 	}
 
-	return fmt.Sprintf(`Review these direct translations from %s to %s.
-For each line, identify issues:
-- Unnatural phrasing
-- Terminology inconsistency
-- Lines that are too long
+	return fmt.Sprintf(`You are a Netflix subtitle translator reviewing translations.
+
+Review these direct translations from %s to %s.
+For each line, provide a brief note about any issues found.
+If a line is good, use an empty string "".
 
 ### Direct translations:
 %s
 
-Output only a JSON array of brief issue notes (empty string "" if fine).`, chunk.SourceLang, chunk.TargetLang, strings.Join(lines, "\n\n"))
+Output a JSON array of strings, one per line. Example: ["", "too long", "unnatural phrasing"]
+
+Output ONLY the JSON array, no other text.`, chunk.SourceLang, chunk.TargetLang, strings.Join(lines, "\n\n"))
 }
 
 func (t *ReflectiveTranslator) buildFinalPrompt(chunk *Chunk) string {
