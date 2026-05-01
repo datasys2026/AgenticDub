@@ -113,8 +113,7 @@ func runVideo(cmd *cobra.Command, args []string) {
 	fmt.Printf("✅ 語音已生成: %s\n", dubbedFile)
 
 	fmt.Printf("🔄 正在燒錄字幕到影片...\n")
-	absOutputDir, _ := filepath.Abs(outputDir)
-	mergedFile, err := burnSubtitles(input, dubbedFile, srtFile, absOutputDir)
+	mergedFile, err := burnSubtitles(input, dubbedFile, srtFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ 燒錄字幕失敗: %v\n", err)
 		os.Exit(1)
@@ -414,22 +413,13 @@ func (t *AiarkTTS) Synthesize(text string) (string, error) {
 
 func burnSubtitles(videoFile, audioFile, srtFile string) (string, error) {
 	absVideo, _ := filepath.Abs(videoFile)
-	absAudio, _ := filepath.Abs(audioFile)
 	absSrt, _ := filepath.Abs(srtFile)
 	absOutputDir, _ := filepath.Abs(outputDir)
 
 	mergedFile := filepath.Join(absOutputDir, "final_video.mp4")
 
 	cmd := exec.Command("ffmpeg", "-i", absVideo,
-		"-i", absAudio,
-		"-i", absSrt,
-		"-c:v", "copy",
-		"-c:a", "aac",
-		"-c:s", "mov_text",
-		"-map", "0:v:0",
-		"-map", "1:a:0",
-		"-map", "2:s:0",
-		"-metadata:s:s:0", "language=chi",
+		"-vf", fmt.Sprintf("subtitles='%s':force_style='FontSize=24,PrimaryColour=&HFFFFFF&,Outline=2,Shadow=3'", absSrt),
 		mergedFile, "-y")
 
 	cmd.Stdout = os.Stdout
@@ -442,13 +432,20 @@ func burnSubtitles(videoFile, audioFile, srtFile string) (string, error) {
 	return mergedFile, nil
 }
 
+type timedAudio struct {
+	start    float64
+	duration float64
+	file     string
+}
+
 func synthesizeAll(segments []translator.Segment) (string, error) {
 	absOutputDir, _ := filepath.Abs(outputDir)
 	os.MkdirAll(absOutputDir, 0755)
 
 	tts := &AiarkTTS{apiKey: apiKey, outputDirAbs: absOutputDir}
 
-	var audioFiles []string
+	var timedAudios []timedAudio
+
 	for i, seg := range segments {
 		if seg.Final == "" {
 			continue
@@ -458,45 +455,139 @@ func synthesizeAll(segments []translator.Segment) (string, error) {
 		}
 
 		fmt.Printf("   🔊 合成 %d/%d...\n", i+1, len(segments))
-		path, err := tts.Synthesize(seg.Final)
+		ttsPath, err := tts.Synthesize(seg.Final)
 		if err != nil {
 			fmt.Printf("   ⚠️ TTS 失敗: %v\n", err)
 			continue
 		}
-		segments[i].Final = path
-		audioFiles = append(audioFiles, path)
+
+		targetDuration := seg.Duration()
+		adjustedFile := filepath.Join(absOutputDir, fmt.Sprintf("audio_%d.wav", i))
+
+		if err := stretchAudio(ttsPath, adjustedFile, targetDuration); err != nil {
+			fmt.Printf("   ⚠️ 調整音頻失敗: %v\n", err)
+			os.Rename(ttsPath, adjustedFile)
+		}
+
+		timedAudios = append(timedAudios, timedAudio{
+			start:    seg.Start,
+			duration: targetDuration,
+			file:     adjustedFile,
+		})
 	}
 
-	if len(audioFiles) == 0 {
+	if len(timedAudios) == 0 {
 		return "", fmt.Errorf("no audio files generated")
 	}
 
 	dubbedFile := filepath.Join(absOutputDir, "dubbed.wav")
-	if len(audioFiles) == 1 {
-		os.Rename(audioFiles[0], dubbedFile)
-		return dubbedFile, nil
+	if err := mergeTimedAudio(timedAudios, dubbedFile, segments); err != nil {
+		return "", err
 	}
 
-	concatFile := filepath.Join(absOutputDir, "concat.txt")
+	return dubbedFile, nil
+}
+
+func stretchAudio(input, output string, targetDuration float64) error {
+	cmd := exec.Command("ffprobe", "-v", "error",
+		"-show_entries", "format=duration",
+		"-of", "default=noprint_wrappers=1:nokey=1", input)
+
+	buf, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	var actualDuration float64
+	fmt.Sscanf(string(buf), "%f", &actualDuration)
+
+	if actualDuration <= 0 {
+		return fmt.Errorf("invalid audio duration")
+	}
+
+	ratio := actualDuration / targetDuration
+	if ratio < 0.5 {
+		ratio = 0.5
+	} else if ratio > 2.0 {
+		ratio = 2.0
+	}
+
+	var cmdArgs []string
+	if ratio != 1.0 {
+		cmdArgs = []string{"-i", input, "-filter:a", fmt.Sprintf("atempo=%f", ratio), "-y", output}
+	} else {
+		cmdArgs = []string{"-i", input, "-y", output}
+	}
+
+	cmd = exec.Command("ffmpeg", cmdArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func mergeTimedAudio(timedAudios []timedAudio, output string, segments []translator.Segment) error {
+	absOutputDir, _ := filepath.Abs(outputDir)
+	padDir := filepath.Join(absOutputDir, "padded")
+	os.MkdirAll(padDir, 0755)
+
+	var paddedFiles []string
+	currentTime := 0.0
+
+	for _, ta := range timedAudios {
+		taStart := ta.start
+		if len(paddedFiles) > 0 {
+			prevEnd := segments[len(paddedFiles)-1].End
+			if taStart < prevEnd {
+				taStart = prevEnd
+			}
+		}
+
+		delayMs := int((taStart - currentTime) * 1000)
+		if delayMs < 0 {
+			delayMs = 0
+		}
+
+		paddedFile := filepath.Join(padDir, fmt.Sprintf("padded_%d.wav", len(paddedFiles)))
+
+		var cmdArgs []string
+		if delayMs > 0 {
+			cmdArgs = []string{"-i", ta.file, "-af", fmt.Sprintf("apad=whole_dur=%f,adelay=%d", ta.duration+float64(delayMs)/1000, delayMs), "-y", paddedFile}
+		} else {
+			cmdArgs = []string{"-i", ta.file, "-y", paddedFile}
+		}
+
+		cmd := exec.Command("ffmpeg", cmdArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("   ⚠️ pad failed: %v\n", err)
+			os.Rename(ta.file, paddedFile)
+		}
+
+		paddedFiles = append(paddedFiles, paddedFile)
+		currentTime = ta.start + ta.duration
+	}
+
+	concatFile := filepath.Join(absOutputDir, "concat_timed.txt")
 	var concatContent strings.Builder
-	for _, f := range audioFiles {
+	for _, f := range paddedFiles {
 		concatContent.WriteString(fmt.Sprintf("file '%s'\n", f))
 	}
 	os.WriteFile(concatFile, []byte(concatContent.String()), 0644)
 	defer os.Remove(concatFile)
 
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", concatFile, "-acodec", "copy", dubbedFile, "-y")
+	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", concatFile, "-acodec", "pcm_s16le", output, "-y")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("ffmpeg merge failed: %w", err)
+		return fmt.Errorf("ffmpeg merge timed audio failed: %w", err)
 	}
 
-	for _, f := range audioFiles {
-		os.Remove(f)
-	}
-
-	return dubbedFile, nil
+	os.RemoveAll(padDir)
+	return nil
 }
 
 var doctorCmd = &cobra.Command{
