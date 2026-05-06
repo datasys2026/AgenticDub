@@ -129,6 +129,20 @@ Use this skill when:
 4. **GPU busy on TTS**: Reduce concurrency to 1
 5. **Vertical video with horizontal embed**: Subtitle burning is skipped - always match `embed_subtitle_video_type` to actual video orientation
 
+## Polling Task Status
+
+After creating a task, poll every 30 seconds to check completion:
+
+```bash
+# Create task
+curl -s http://127.0.0.1:8899/api/capability/subtitleTask -X POST -H "Content-Type: application/json" -d '{...}'
+
+# Poll status (every 30s)
+curl -s "http://127.0.0.1:8899/api/capability/subtitleTask?taskId=<task_id>"
+
+# Done when process_percent = 100 and video_url is present
+```
+
 ## Testing
 
 Test video: `/Users/baochen10luo/PaultoDo/downloads/shorts_I3W46NuGg18.mp4` (47s vertical Shorts)
