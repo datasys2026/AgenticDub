@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,9 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 	// Step 2: 使用 阿里云TTS
 	// 判断是否使用音色克隆
 	voiceCode := stepParam.TtsVoiceCode
+	if voiceCode == "" {
+		voiceCode = "Ryan"
+	}
 	if stepParam.VoiceCloneAudioUrl != "" {
 		var code string
 		code, err = s.VoiceCloneClient.CosyVoiceClone("krillinai", stepParam.VoiceCloneAudioUrl)
@@ -123,10 +127,33 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 			return fmt.Errorf("srtFileToSpeech GetAudioDuration error: %w", err)
 		}
 
+		// 取得 TTS 生成前的原始音訊時長
+		rawAudioDuration, _ := util.GetAudioDuration(outputFile)
+
 		// 计算音频的结束时间
 		audioEndTime := currentTime.Add(time.Duration(audioDuration*1000) * time.Millisecond)
-		// 写入文件
-		durationDetailFile.WriteString(fmt.Sprintf("Audio %d: start=%s, end=%s\n", i+1, currentTime.Format("15:04:05,000"), audioEndTime.Format("15:04:05,000")))
+
+		// 写入详细 log
+		// 格式：[id] 原文時間=%.3fs | 翻譯文字=%.20s | TTS時間=%.3fs | 調整=gap(前,後)/speed=x | 最終=%.3fs
+		adjustment := ""
+		if rawAudioDuration < duration {
+			gap := duration - rawAudioDuration
+			front := gap * 0.3
+			back := gap * 0.7
+			adjustment = fmt.Sprintf("gap(%.3f+%.3f)", front, back)
+		} else if rawAudioDuration > duration {
+			speed := rawAudioDuration / duration
+			adjustment = fmt.Sprintf("speed=%.2fx", speed)
+		} else {
+			adjustment = "none"
+		}
+
+		textPreview := sub.Text
+		if len(textPreview) > 25 {
+			textPreview = textPreview[:25] + "..."
+		}
+		durationDetailFile.WriteString(fmt.Sprintf("[%d] 原文時間=%.3fs | 翻譯=[%s] | TTS=%.3fs | 調整=%s | 最終=%.3fs\n",
+			i+1, duration, textPreview, rawAudioDuration, adjustment, audioDuration))
 		currentTime = audioEndTime
 	}
 
@@ -159,7 +186,7 @@ func (s Service) processSubtitlesConcurrently(subtitles []types.SrtSentenceWithS
 		err   error
 	}
 
-	maxConcurrency := 3 // 降低并发数以减少网络压力
+	maxConcurrency := 1 // 降低并发数以避免 GPU 竞争
 	semaphore := make(chan struct{}, maxConcurrency)
 	var wg sync.WaitGroup
 	resultCh := make(chan processingResult, len(subtitles))
@@ -294,93 +321,163 @@ func newGenerateSilence(outputAudio string, duration float64) error {
 	return nil
 }
 
-// 调整音频时长，确保音频与字幕时长一致
+func newGenerateSilenceWithSampleRate(outputAudio string, duration float64, sampleRate int) error {
+	cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "lavfi", "-i", fmt.Sprintf("anullsrc=channel_layout=mono:sample_rate=%d", sampleRate), "-t",
+		fmt.Sprintf("%.3f", duration), "-ar", strconv.Itoa(sampleRate), "-ac", "1", "-c:a", "pcm_s16le", outputAudio)
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("newGenerateSilenceWithSampleRate failed: %w", err)
+	}
+	return nil
+}
+
+// 調整音頻時長，確保音頻與字幕時長一致
+// 新策略：
+// - TTS 音訊 < 原文時間：保持 TTS 原速，在前後加對話間隔（30% 前 / 70% 後）
+// - TTS 音訊 > 原文時間：加速（atempo）
 func adjustAudioDuration(inputFile, outputFile, taskBasePath string, subtitleDuration float64) error {
-	// 获取音频时长
 	audioDuration, err := util.GetAudioDuration(inputFile)
 	if err != nil {
 		return err
 	}
 
-	// 如果音频时长短于字幕时长，插入静音延长音频
+	// 如果音頻時長短於字幕時長，保持原速，在前後加靜音間隔
 	if audioDuration < subtitleDuration {
-		// 计算需要插入的静音时长
-		silenceDuration := subtitleDuration - audioDuration
+		gapDuration := subtitleDuration - audioDuration
+		frontGap := gapDuration * 0.3
+		backGap := gapDuration * 0.7
 
-		// 生成静音音频
-		silenceFile := filepath.Join(taskBasePath, "silence.wav")
-		err := newGenerateSilence(silenceFile, silenceDuration)
-		if err != nil {
-			return fmt.Errorf("error generating silence: %v", err)
+		// 產生靜音檔案（使用與 TTS 相同的 sample rate = 24000）
+		var silenceFiles []string
+		frontSilenceFile := filepath.Join(taskBasePath, "silence_front.wav")
+		if frontGap > 0.01 {
+			err = newGenerateSilenceWithSampleRate(frontSilenceFile, frontGap, 24000)
+			if err != nil {
+				return fmt.Errorf("error generating front silence: %v", err)
+			}
+			silenceFiles = append(silenceFiles, frontSilenceFile)
 		}
 
-		silenceAudioDuration, _ := util.GetAudioDuration(silenceFile)
-		log.GetLogger().Info("adjustAudioDuration", zap.Any("silenceDuration", silenceAudioDuration))
+		backSilenceFile := filepath.Join(taskBasePath, "silence_back.wav")
+		if backGap > 0.01 {
+			err = newGenerateSilenceWithSampleRate(backSilenceFile, backGap, 24000)
+			if err != nil {
+				return fmt.Errorf("error generating back silence: %v", err)
+			}
+			silenceFiles = append(silenceFiles, backSilenceFile)
+		}
 
-		// 拼接音频和静音
-		concatFile := filepath.Join(taskBasePath, "concat.txt")
+		// 使用 concat demuxer（sample rate 現在都一致了）
+		concatFile := filepath.Join(taskBasePath, "concat_adjust.txt")
 		f, err := os.Create(concatFile)
 		if err != nil {
 			return fmt.Errorf("adjustAudioDuration create concat file error: %w", err)
 		}
-		defer os.Remove(concatFile)
 
-		_, err = f.WriteString(fmt.Sprintf("file '%s'\nfile '%s'\n", filepath.Base(inputFile), filepath.Base(silenceFile)))
-		if err != nil {
-			return fmt.Errorf("adjustAudioDuration write to concat file error: %v", err)
+		frontName := filepath.Base(frontSilenceFile)
+		backName := filepath.Base(backSilenceFile)
+		inputName := filepath.Base(inputFile)
+
+		if frontGap > 0.01 {
+			_, err = f.WriteString(fmt.Sprintf("file '%s'\n", frontName))
+			if err != nil {
+				f.Close()
+				return err
+			}
 		}
+
+		_, err = f.WriteString(fmt.Sprintf("file '%s'\n", inputName))
+		if err != nil {
+			f.Close()
+			return err
+		}
+
+		if backGap > 0.01 {
+			_, err = f.WriteString(fmt.Sprintf("file '%s'\n", backName))
+			if err != nil {
+				f.Close()
+				return err
+			}
+		}
+
 		f.Close()
 
 		cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", outputFile)
-		log.GetLogger().Info("adjustAudioDuration", zap.Any("inputFile", inputFile), zap.Any("outputFile", outputFile), zap.String("run command", cmd.String()))
 		cmd.Stderr = os.Stderr
 		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("adjustAudioDuration concat audio and silence  error: %v", err)
+			return fmt.Errorf("adjustAudioDuration concat error: %v", err)
 		}
 
-		concatFileDuration, _ := util.GetAudioDuration(outputFile)
-		log.GetLogger().Info("adjustAudioDuration", zap.Any("concatFileDuration", concatFileDuration))
+		// 清理臨時檔案
+		os.Remove(concatFile)
+		for _, sf := range silenceFiles {
+			os.Remove(sf)
+		}
+
+		log.GetLogger().Info("adjustAudioDuration: keep original speed, add gap",
+			zap.Float64("original_duration", subtitleDuration),
+			zap.Float64("tts_duration", audioDuration),
+			zap.Float64("front_gap", frontGap),
+			zap.Float64("back_gap", backGap))
 		return nil
 	}
 
-	// 如果音频时长长于字幕时长，缩放音频的播放速率
+	// 如果音頻時長長於字幕時長，縮放音頻的播放速率
 	if audioDuration > subtitleDuration {
-		// 计算播放速率
 		speed := audioDuration / subtitleDuration
-		//if speed < 0.5 || speed > 2.0 {
-		//	// 速率在 FFmpeg 支持的范围内一般是 [0.5, 2.0]
-		//	return fmt.Errorf("speed factor %.2f is out of range (0.5 to 2.0)", speed)
-		//}
-
-		// 使用 atempo 滤镜调整音频播放速率
 		cmd := exec.Command(storage.FfmpegPath, "-y", "-i", inputFile, "-filter:a", fmt.Sprintf("atempo=%.2f", speed), outputFile)
 		cmd.Stderr = os.Stderr
-		return cmd.Run()
+		err = cmd.Run()
+		if err != nil {
+			return err
+		}
+		log.GetLogger().Info("adjustAudioDuration: speed up",
+			zap.Float64("original_duration", subtitleDuration),
+			zap.Float64("tts_duration", audioDuration),
+			zap.Float64("speed_factor", speed))
+		return nil
 	}
 
-	// 如果音频时长和字幕时长相同，则直接复制文件
+	// 如果音頻時長和字幕時長相同，則直接複製檔案
 	return util.CopyFile(inputFile, outputFile)
 }
 
 // 拼接音频文件
 func concatenateAudioFiles(audioFiles []string, outputFile, taskBasePath string) error {
-	// 创建一个临时文件保存音频文件列表
+	// 创建临时文件保存音频文件列表
 	listFile := filepath.Join(taskBasePath, "audio_list.txt")
 	f, err := os.Create(listFile)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(listFile)
+
+	// 获取当前工作目录
+	cwd, err := os.Getwd()
+	if err != nil {
+		f.Close()
+		return err
+	}
 
 	for _, file := range audioFiles {
-		_, err := f.WriteString(fmt.Sprintf("file '%s'\n", filepath.Base(file)))
+		// 如果是相对路径，转换为绝对路径
+		var absPath string
+		if filepath.IsAbs(file) {
+			absPath = file
+		} else {
+			absPath = filepath.Join(cwd, file)
+		}
+		_, err := f.WriteString(fmt.Sprintf("file '%s'\n", absPath))
 		if err != nil {
+			f.Close()
 			return err
 		}
 	}
 	f.Close()
+	defer os.Remove(listFile)
 
+	// outputFile 已经是完整路径
 	cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outputFile)
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

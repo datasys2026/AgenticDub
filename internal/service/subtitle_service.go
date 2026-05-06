@@ -110,13 +110,23 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		VoiceCloneAudioUrl:      voiceCloneAudioUrl,
 		ReplaceWordsMap:         replaceWordsMap,
 		OriginLanguage:          types.StandardLanguageCode(req.OriginLanguage),
-		TargetLanguage:          types.StandardLanguageCode(req.TargetLang),
 		UserUILanguage:          types.StandardLanguageCode(req.Language),
-		EmbedSubtitleVideoType:  req.EmbedSubtitleVideoType,
-		VerticalVideoMajorTitle: req.VerticalMajorTitle,
-		VerticalVideoMinorTitle: req.VerticalMinorTitle,
-		MaxWordOneLine:          12, // 默认值
 	}
+	targetLang := req.TargetLang
+	if targetLang == "繁體中文" {
+		targetLang = "zh_tw"
+	} else if targetLang == "簡體中文" {
+		targetLang = "zh_cn"
+	}
+	stepParam.TargetLanguage = types.StandardLanguageCode(targetLang)
+	embedSubtitleType := req.EmbedSubtitleVideoType
+	if embedSubtitleType == "" {
+		embedSubtitleType = "horizontal"
+	}
+	stepParam.EmbedSubtitleVideoType = embedSubtitleType
+	stepParam.VerticalVideoMajorTitle = req.VerticalMajorTitle
+	stepParam.VerticalVideoMinorTitle = req.VerticalMinorTitle
+	stepParam.MaxWordOneLine = 12 // 默认值
 	if req.OriginLanguageWordOneLine != 0 {
 		stepParam.MaxWordOneLine = req.OriginLanguageWordOneLine
 	}

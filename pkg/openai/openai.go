@@ -30,37 +30,22 @@ func (c *Client) ChatCompletion(query string) (string, error) {
 			},
 		},
 		Temperature:    0.9,
-		Stream:         true,
+		Stream:         false,
 		MaxTokens:      8192,
 		ResponseFormat: responseFormat,
 	}
 
-	stream, err := c.client.CreateChatCompletionStream(context.Background(), req)
+	resp, err := c.client.CreateChatCompletion(context.Background(), req)
 	if err != nil {
-		log.GetLogger().Error("openai create chat completion stream failed", zap.Error(err))
+		log.GetLogger().Error("openai create chat completion failed", zap.Error(err))
 		return "", err
 	}
-	defer stream.Close()
 
-	var resContent string
-	for {
-		response, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.GetLogger().Error("openai stream receive failed", zap.Error(err))
-			return "", err
-		}
-		if len(response.Choices) == 0 {
-			log.GetLogger().Info("openai stream receive no choices", zap.Any("response", response))
-			continue
-		}
-
-		resContent += response.Choices[0].Delta.Content
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
 	}
 
-	return resContent, nil
+	return resp.Choices[0].Message.Content, nil
 }
 
 func (c *Client) Text2Speech(text, voice string, outputFile string) error {
@@ -72,11 +57,11 @@ func (c *Client) Text2Speech(text, voice string, outputFile string) error {
 
 	// 创建HTTP请求
 	reqBody := fmt.Sprintf(`{
-		"model": "tts-1",
+		"model": "%s",
 		"input": "%s",
 		"voice":"%s",
 		"response_format": "wav"
-	}`, text, voice)
+	}`, config.Conf.Tts.Openai.Model, text, voice)
 	req, err := http.NewRequest("POST", url, strings.NewReader(reqBody))
 	if err != nil {
 		return err
@@ -99,18 +84,53 @@ func (c *Client) Text2Speech(text, voice string, outputFile string) error {
 		return fmt.Errorf("openai tts none-200 status code: %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// 檢查是否為 JSON 回應（aiark 格式）
+	var ttsResponse struct {
+		File string `json:"file"`
+	}
+	if json.Unmarshal(body, &ttsResponse) == nil && ttsResponse.File != "" {
+		// aiark 返回 JSON，需要下載音訊
+		audioUrl := strings.Replace(baseUrl, "/v1", "", 1) + ttsResponse.File
+		audioReq, err := http.NewRequest("GET", audioUrl, nil)
+		if err != nil {
+			return err
+		}
+		audioReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Conf.Tts.Openai.ApiKey))
+
+		audioResp, err := client.Do(audioReq)
+		if err != nil {
+			return err
+		}
+		defer audioResp.Body.Close()
+
+		if audioResp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to download audio: %d", audioResp.StatusCode)
+		}
+
+		file, err := os.Create(outputFile)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		_, err = io.Copy(file, audioResp.Body)
+		return err
+	}
+
+	// 標準回應（直接是音訊資料）
 	file, err := os.Create(outputFile)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	_, err = io.Copy(file, resp.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err = file.Write(body)
+	return err
 }
 
 func parseJSONResponse(jsonStr string) (string, error) {

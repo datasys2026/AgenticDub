@@ -480,7 +480,7 @@ func (s Service) audioToSrt(ctx context.Context, stepParam *types.SubtitleTaskSt
 
 				segmentIdx := translatedItems.Id
 
-				err = generateSrtWithTimestamps(srtBlocks, timePoints[segmentIdx], audioSegments[segmentIdx].TranscriptionData.Words, segmentIdx, stepParam)
+				err = generateSrtWithTimestamps(srtBlocks, timePoints[segmentIdx], audioSegments[segmentIdx].TranscriptionData.Words, audioSegments[segmentIdx].TranscriptionData.Segments, segmentIdx, stepParam)
 				if err != nil {
 					return fmt.Errorf("audioToSubtitle audioToSrt generateTimestamps err: %w", err)
 				}
@@ -957,14 +957,27 @@ func jumpFindMaxIncreasingSubArray(words []types.Word) (int, int, []types.Word) 
 	return startIdx, endIdx, result
 }
 
-func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, words []types.Word, segmentIdx int, stepParam *types.SubtitleTaskStepParam) error {
-	if len(srtBlocks) == 0 || len(words) == 0 {
+func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, words []types.Word, segments []types.TranscriptionSegment, segmentIdx int, stepParam *types.SubtitleTaskStepParam) error {
+	if len(srtBlocks) == 0 {
 		return nil
 	}
 
-	// 获取每个字幕块的时间戳
+	hasWords := len(words) > 0
+	hasSegments := len(segments) > 0
+
+	if !hasWords && !hasSegments {
+		return nil
+	}
+
 	var lastTs float64
 	shortOriginSrtMap := make(map[int][]util.SrtBlock, 0)
+
+	// 如果没有 words 但有 segments，使用 segment-based 分配
+	if !hasWords && hasSegments {
+		log.GetLogger().Info("Using segments for timestamp generation (words empty)", zap.Int("segments", len(segments)))
+		return generateSrtFromSegments(srtBlocks, tsOffset, segments, stepParam)
+	}
+
 	timeMatcher := NewTimestampGenerator()
 	newSrtBlocks, err := timeMatcher.GenerateTimestamps(srtBlocks, words, stepParam.OriginLanguage, tsOffset)
 	if err != nil {
@@ -1124,6 +1137,110 @@ func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, wor
 			srtShortOriginFile.WriteString(shortOriginBlock.Timestamp + "\n")
 			srtShortOriginFile.WriteString(shortOriginBlock.OriginLanguageSentence + "\n\n")
 			shortSrtNum++
+		}
+	}
+
+	return nil
+}
+
+// generateSrtFromSegments 使用 segment 時間戳來分配字幕時間
+func generateSrtFromSegments(srtBlocks []*util.SrtBlock, tsOffset float64, segments []types.TranscriptionSegment, stepParam *types.SubtitleTaskStepParam) error {
+	if len(srtBlocks) == 0 || len(segments) == 0 {
+		return nil
+	}
+
+	// 將 segments 轉換為 word-like 結構造分配
+	// 每個 segment 的文字數當作 "words"
+	var pseudoWords []types.Word
+	for _, seg := range segments {
+		wordCount := len(strings.Fields(seg.Text))
+		for i := 0; i < wordCount; i++ {
+			pseudoWords = append(pseudoWords, types.Word{
+				Start: seg.Start,
+				End:   seg.End,
+			})
+		}
+	}
+
+	// 根據 srtBlocks 數量平均分配時間
+	totalDuration := segments[len(segments)-1].End - segments[0].Start
+	avgDuration := totalDuration / float64(len(srtBlocks))
+
+	var lastTs float64
+	shortOriginSrtMap := make(map[int][]util.SrtBlock, 0)
+
+	for _, srtBlock := range srtBlocks {
+		if srtBlock.OriginLanguageSentence == "" {
+			continue
+		}
+
+		startTime := lastTs
+		endTime := startTime + avgDuration
+
+		srtBlock.Timestamp = fmt.Sprintf("%s --> %s", util.FormatTime(float32(startTime+tsOffset)), util.FormatTime(float32(endTime+tsOffset)))
+
+		// 處理短句字幕
+		sentenceWords := strings.Fields(srtBlock.OriginLanguageSentence)
+		if len(sentenceWords) <= stepParam.MaxWordOneLine {
+			shortOriginSrtMap[srtBlock.Index] = append(shortOriginSrtMap[srtBlock.Index], util.SrtBlock{
+				Index:                  srtBlock.Index,
+				Timestamp:              srtBlock.Timestamp,
+				OriginLanguageSentence: srtBlock.OriginLanguageSentence,
+			})
+		}
+
+		lastTs = endTime
+	}
+
+	// 寫入 bilingual SRT
+	bilingualFileName := fmt.Sprintf("%s/%s", stepParam.TaskBasePath, fmt.Sprintf(types.SubtitleTaskSplitBilingualSrtFileNamePattern, 0))
+	bilingualFile, err := os.Create(bilingualFileName)
+	if err != nil {
+		return fmt.Errorf("generateSrtFromSegments create bilingual file error: %w", err)
+	}
+	defer bilingualFile.Close()
+
+	srtIdx := 1
+	for _, srtBlock := range srtBlocks {
+		_, _ = bilingualFile.WriteString(fmt.Sprintf("%d\n", srtIdx))
+		srtIdx++
+		_, _ = bilingualFile.WriteString(srtBlock.Timestamp + "\n")
+		_, _ = bilingualFile.WriteString(srtBlock.TargetLanguageSentence + "\n")
+		_, _ = bilingualFile.WriteString(srtBlock.OriginLanguageSentence + "\n\n")
+	}
+
+	// 寫入 short origin mixed SRT
+	shortMixedFileName := fmt.Sprintf("%s/%s", stepParam.TaskBasePath, fmt.Sprintf(types.SubtitleTaskSplitShortOriginMixedSrtFileNamePattern, 0))
+	shortMixedFile, err := os.Create(shortMixedFileName)
+	if err != nil {
+		return fmt.Errorf("generateSrtFromSegments create shortMixedFile error: %w", err)
+	}
+	defer shortMixedFile.Close()
+
+	srtNum := 1
+	for _, srtBlock := range srtBlocks {
+		_, _ = shortMixedFile.WriteString(fmt.Sprintf("%d\n", srtNum))
+		_, _ = shortMixedFile.WriteString(srtBlock.Timestamp + "\n")
+		_, _ = shortMixedFile.WriteString(srtBlock.OriginLanguageSentence + "\n\n")
+		srtNum++
+	}
+
+	// 寫入 short origin SRT
+	shortOriginFileName := fmt.Sprintf("%s/%s", stepParam.TaskBasePath, fmt.Sprintf(types.SubtitleTaskSplitShortOriginSrtFileNamePattern, 0))
+	shortOriginFile, err := os.Create(shortOriginFileName)
+	if err != nil {
+		return fmt.Errorf("generateSrtFromSegments create shortOriginFile error: %w", err)
+	}
+	defer shortOriginFile.Close()
+
+	for _, srtBlock := range srtBlocks {
+		if shortBlocks, ok := shortOriginSrtMap[srtBlock.Index]; ok {
+			for _, block := range shortBlocks {
+				_, _ = shortOriginFile.WriteString(fmt.Sprintf("%d\n", srtNum))
+				_, _ = shortOriginFile.WriteString(block.Timestamp + "\n")
+				_, _ = shortOriginFile.WriteString(block.OriginLanguageSentence + "\n\n")
+				srtNum++
+			}
 		}
 	}
 

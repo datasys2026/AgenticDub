@@ -8,9 +8,10 @@ import (
 
 type Client struct {
 	client *openai.Client
+	model  string
 }
 
-func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
+func NewClient(baseUrl, apiKey, model, proxyAddr string) *Client {
 	cfg := openai.DefaultConfig(apiKey)
 	if baseUrl != "" {
 		cfg.BaseURL = baseUrl
@@ -26,5 +27,5 @@ func NewClient(baseUrl, apiKey, proxyAddr string) *Client {
 	}
 
 	client := openai.NewClientWithConfig(cfg)
-	return &Client{client: client}
+	return &Client{client: client, model: model}
 }

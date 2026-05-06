@@ -13,7 +13,7 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 	resp, err := c.client.CreateTranscription(
 		context.Background(),
 		openai.AudioRequest{
-			Model:    openai.Whisper1,
+			Model:    c.model,
 			FilePath: audioFile,
 			Format:   openai.AudioResponseFormatVerboseJSON,
 			TimestampGranularities: []openai.TranscriptionTimestampGranularity{
@@ -31,8 +31,16 @@ func (c *Client) Transcription(audioFile, language, workDir string) (*types.Tran
 		Language: resp.Language,
 		Text:     strings.ReplaceAll(resp.Text, "-", " "), // 连字符处理，因为模型存在很多错误添加到连字符
 		Words:    make([]types.Word, 0),
+		Segments: make([]types.TranscriptionSegment, 0, len(resp.Segments)),
 	}
 	num := 0
+	for _, seg := range resp.Segments {
+		transcriptionData.Segments = append(transcriptionData.Segments, types.TranscriptionSegment{
+			Start: seg.Start,
+			End:   seg.End,
+			Text:  seg.Text,
+		})
+	}
 	for _, word := range resp.Words {
 		if strings.Contains(word.Word, "—") {
 			// 对称切分

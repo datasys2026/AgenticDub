@@ -325,7 +325,12 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 		input = stepParam.VideoWithTtsFilePath
 	}
 
-	cmd := exec.Command(storage.FfmpegPath, "-y", "-i", input, "-vf", fmt.Sprintf("ass=%s", strings.ReplaceAll(assPath, "\\", "/")), "-c:a", "aac", "-b:a", "192k", filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("/output/%s", outputFileName)))
+	cwd, _ := os.Getwd()
+	absAssPath := filepath.Join(cwd, assPath)
+	outputPath := filepath.Join(cwd, stepParam.TaskBasePath, "output", outputFileName)
+	os.MkdirAll(filepath.Dir(outputPath), 0755)
+
+	cmd := exec.Command(storage.FfmpegPath, "-y", "-i", input, "-vf", fmt.Sprintf("ass=%s", strings.ReplaceAll(absAssPath, "\\", "/")), "-c:a", "aac", "-b:a", "192k", outputPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.GetLogger().Error("embedSubtitles embed subtitle into video ffmpeg error", zap.String("video path", stepParam.InputVideoPath), zap.String("output", string(output)), zap.Error(err))

@@ -400,4 +400,11 @@ type TranscriptionData struct {
 	Language string
 	Text     string
 	Words    []Word
+	Segments []TranscriptionSegment
+}
+
+type TranscriptionSegment struct {
+	Start float64
+	End   float64
+	Text  string
 }

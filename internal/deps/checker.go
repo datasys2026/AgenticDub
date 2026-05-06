@@ -87,11 +87,19 @@ func CheckDependency() error {
 
 // 检测并安装ffmpeg
 func checkAndDownloadFfmpeg() error {
+	// 检查ffmpeg-full是否已经安装（它有libass支援字幕燒錄）
+	ffmpegFullPath := "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
+	if _, err := os.Stat(ffmpegFullPath); err == nil {
+		storage.FfmpegPath = ffmpegFullPath
+		log.GetLogger().Info("已找到ffmpeg-full", zap.String("path", ffmpegFullPath))
+		return nil
+	}
+
 	// 检查ffmpeg是否已经安装
 	_, err := exec.LookPath("ffmpeg")
 	if err == nil {
-		log.GetLogger().Info("已找到ffmpeg")
 		storage.FfmpegPath = "ffmpeg"
+		log.GetLogger().Info("已找到ffmpeg")
 		return nil
 	}
 

@@ -444,8 +444,7 @@ func synthesizeAll(segments []translator.Segment) (string, error) {
 
 	tts := &AiarkTTS{apiKey: apiKey, outputDirAbs: absOutputDir}
 
-	var timedAudios []timedAudio
-
+	var audioFiles []string
 	for i, seg := range segments {
 		if seg.Final == "" {
 			continue
@@ -455,139 +454,45 @@ func synthesizeAll(segments []translator.Segment) (string, error) {
 		}
 
 		fmt.Printf("   🔊 合成 %d/%d...\n", i+1, len(segments))
-		ttsPath, err := tts.Synthesize(seg.Final)
+		path, err := tts.Synthesize(seg.Final)
 		if err != nil {
 			fmt.Printf("   ⚠️ TTS 失敗: %v\n", err)
 			continue
 		}
-
-		targetDuration := seg.Duration()
-		adjustedFile := filepath.Join(absOutputDir, fmt.Sprintf("audio_%d.wav", i))
-
-		if err := stretchAudio(ttsPath, adjustedFile, targetDuration); err != nil {
-			fmt.Printf("   ⚠️ 調整音頻失敗: %v\n", err)
-			os.Rename(ttsPath, adjustedFile)
-		}
-
-		timedAudios = append(timedAudios, timedAudio{
-			start:    seg.Start,
-			duration: targetDuration,
-			file:     adjustedFile,
-		})
+		segments[i].Final = path
+		audioFiles = append(audioFiles, path)
 	}
 
-	if len(timedAudios) == 0 {
+	if len(audioFiles) == 0 {
 		return "", fmt.Errorf("no audio files generated")
 	}
 
 	dubbedFile := filepath.Join(absOutputDir, "dubbed.wav")
-	if err := mergeTimedAudio(timedAudios, dubbedFile, segments); err != nil {
-		return "", err
+	if len(audioFiles) == 1 {
+		os.Rename(audioFiles[0], dubbedFile)
+		return dubbedFile, nil
 	}
 
-	return dubbedFile, nil
-}
-
-func stretchAudio(input, output string, targetDuration float64) error {
-	cmd := exec.Command("ffprobe", "-v", "error",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1", input)
-
-	buf, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("ffprobe failed: %w", err)
-	}
-
-	var actualDuration float64
-	fmt.Sscanf(string(buf), "%f", &actualDuration)
-
-	if actualDuration <= 0 {
-		return fmt.Errorf("invalid audio duration")
-	}
-
-	ratio := actualDuration / targetDuration
-	if ratio < 0.5 {
-		ratio = 0.5
-	} else if ratio > 2.0 {
-		ratio = 2.0
-	}
-
-	var cmdArgs []string
-	if ratio != 1.0 {
-		cmdArgs = []string{"-i", input, "-filter:a", fmt.Sprintf("atempo=%f", ratio), "-y", output}
-	} else {
-		cmdArgs = []string{"-i", input, "-y", output}
-	}
-
-	cmd = exec.Command("ffmpeg", cmdArgs...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
-}
-
-func mergeTimedAudio(timedAudios []timedAudio, output string, segments []translator.Segment) error {
-	absOutputDir, _ := filepath.Abs(outputDir)
-	padDir := filepath.Join(absOutputDir, "padded")
-	os.MkdirAll(padDir, 0755)
-
-	var paddedFiles []string
-	currentTime := 0.0
-
-	for _, ta := range timedAudios {
-		taStart := ta.start
-		if len(paddedFiles) > 0 {
-			prevEnd := segments[len(paddedFiles)-1].End
-			if taStart < prevEnd {
-				taStart = prevEnd
-			}
-		}
-
-		delayMs := int((taStart - currentTime) * 1000)
-		if delayMs < 0 {
-			delayMs = 0
-		}
-
-		paddedFile := filepath.Join(padDir, fmt.Sprintf("padded_%d.wav", len(paddedFiles)))
-
-		var cmdArgs []string
-		if delayMs > 0 {
-			cmdArgs = []string{"-i", ta.file, "-af", fmt.Sprintf("apad=whole_dur=%f,adelay=%d", ta.duration+float64(delayMs)/1000, delayMs), "-y", paddedFile}
-		} else {
-			cmdArgs = []string{"-i", ta.file, "-y", paddedFile}
-		}
-
-		cmd := exec.Command("ffmpeg", cmdArgs...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("   ⚠️ pad failed: %v\n", err)
-			os.Rename(ta.file, paddedFile)
-		}
-
-		paddedFiles = append(paddedFiles, paddedFile)
-		currentTime = ta.start + ta.duration
-	}
-
-	concatFile := filepath.Join(absOutputDir, "concat_timed.txt")
+	concatFile := filepath.Join(absOutputDir, "concat.txt")
 	var concatContent strings.Builder
-	for _, f := range paddedFiles {
+	for _, f := range audioFiles {
 		concatContent.WriteString(fmt.Sprintf("file '%s'\n", f))
 	}
 	os.WriteFile(concatFile, []byte(concatContent.String()), 0644)
 	defer os.Remove(concatFile)
 
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", concatFile, "-acodec", "pcm_s16le", output, "-y")
+	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", concatFile, "-acodec", "pcm_s16le", dubbedFile, "-y")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg merge timed audio failed: %w", err)
+		return "", fmt.Errorf("ffmpeg merge failed: %w", err)
 	}
 
-	os.RemoveAll(padDir)
-	return nil
+	for _, f := range audioFiles {
+		os.Remove(f)
+	}
+
+	return dubbedFile, nil
 }
 
 var doctorCmd = &cobra.Command{

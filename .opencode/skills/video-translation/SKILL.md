@@ -43,19 +43,49 @@ TTS response is JSON with `file` field, not direct audio:
 ```
 Need to download audio from `/tts/audio/{filename}` (replace `/v1` in base URL).
 
-### 3. ffmpeg with libass
-System ffmpeg needs libass for subtitle burning. Install:
+### 3. ffmpeg with libass (CRITICAL)
+System `ffmpeg` does NOT have libass. Must use `ffmpeg-full`:
 ```bash
 brew install ffmpeg-full
 ```
 
-Or use: `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`
+Path detection order in `checker.go`:
+1. Check `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` first (has libass)
+2. Fall back to `ffmpeg` in PATH (no libass)
+3. Download if neither found
 
 ### 4. TTS Concurrency
 Set `maxConcurrency := 1` to avoid GPU contention on aiark server.
 
 ### 5. Subtitle Embedding
-Default `embed_subtitle_video_type = "horizontal"` when not specified.
+- Vertical video (9:16 Shorts): use `embed_subtitle_video_type = "vertical"`
+- Horizontal video: use `embed_subtitle_video_type = "horizontal"`
+- If video is vertical but `horizontal` is specified, subtitle burning is SKIPPED
+
+## Audio Timing Adjustment Strategy
+
+TTS synthesis duration often differs from original subtitle duration. Solution in `srt2speech.go::adjustAudioDuration`:
+
+**When TTS < Original Duration:**
+- Keep TTS at original speed (natural speech)
+- Add silence gap at front (30%) and back (70%)
+- Gap = `original_duration - tts_duration`
+- Produces natural conversational pauses
+
+**When TTS > Original Duration:**
+- Speed up using ffmpeg `atempo` filter
+- Speed factor = `tts_duration / original_duration`
+
+**Implementation Details:**
+- Silence files generated at sample rate 24000 Hz (matches TTS output)
+- Concat demuxer used for joining silence + TTS + silence
+- Concat file uses relative filenames (not full paths)
+- Final audio duration matches original video duration
+
+**Duration Log Format:**
+```
+[id] 原文時間=5.844s | 翻譯=[讓我跟你談...] | TTS=4.160s | 調整=gap(0.505+1.179) | 最終=5.844s
+```
 
 ## API Request Format
 
@@ -71,18 +101,18 @@ POST /api/capability/subtitleTask
   "tts": 1,
   "tts_voice_code": "",
   "language": "zh",
-  "embed_subtitle_video_type": "horizontal"
+  "embed_subtitle_video_type": "vertical"
 }
 ```
 
 ## Key Files
 
 - `internal/service/audio2subtitle.go` - STT + translation pipeline
-- `internal/service/srt2speech.go` - TTS synthesis
+- `internal/service/srt2speech.go` - TTS synthesis + timing adjustment
 - `internal/service/srt_embed.go` - Subtitle burning
 - `internal/service/subtitle_service.go` - Task orchestration
+- `internal/deps/checker.go` - ffmpeg path detection (ffmpeg-full first)
 - `pkg/openai/openai.go` - OpenAI-compatible client (TTS)
-- `internal/deps/checker.go` - ffmpeg path detection
 
 ## When to use
 
@@ -93,12 +123,15 @@ Use this skill when:
 
 ## Common Issues
 
-1. **Subs are Simplified instead of Traditional**: Check `target_lang` is `繁體中文` not `简体中文`
+1. **Subs are Simplified instead of Traditional**: Check `target_lang` is `繁體中文` not `簡體中文`
 2. **TTS returns 404 on audio download**: URL should be `/tts/audio/xxx.wav` not `/tts/v1/audio/xxx.wav`
-3. **ffmpeg ass filter not found**: Need ffmpeg-full with libass support
+3. **ffmpeg subtitles filter not found**: Need ffmpeg-full with libass, check `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`
 4. **GPU busy on TTS**: Reduce concurrency to 1
+5. **Vertical video with horizontal embed**: Subtitle burning is skipped - always match `embed_subtitle_video_type` to actual video orientation
 
 ## Testing
 
-Test video: `/Users/baochen10luo/PaultoDo/downloads/original_en_1min.mp4`
-Output: `tasks/<task_id>/output/horizontal_embed.mp4`
+Test video: `/Users/baochen10luo/PaultoDo/downloads/shorts_I3W46NuGg18.mp4` (47s vertical Shorts)
+Output: `tasks/<task_id>/output/vertical_embed.mp4`
+
+Expected final audio duration: ~47s (matches original video)
