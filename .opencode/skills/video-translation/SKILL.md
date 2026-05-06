@@ -143,9 +143,15 @@ curl -s "http://127.0.0.1:8899/api/capability/subtitleTask?taskId=<task_id>"
 # Done when process_percent = 100 and video_url is present
 ```
 
+## Output Location
+
+Final video is saved to `./output/<task_id>_<type>_embed.mp4`:
+- `./output/<task_id>_vertical_embed.mp4` - Vertical video (9:16)
+- `./output/<task_id>_horizontal_embed.mp4` - Horizontal video (16:9)
+
 ## Testing
 
 Test video: `/Users/baochen10luo/PaultoDo/downloads/shorts_I3W46NuGg18.mp4` (47s vertical Shorts)
-Output: `tasks/<task_id>/output/vertical_embed.mp4`
+Output: `output/<task_id>_vertical_embed.mp4`
 
 Expected final audio duration: ~47s (matches original video)

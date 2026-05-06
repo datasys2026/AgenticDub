@@ -327,7 +327,8 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 
 	cwd, _ := os.Getwd()
 	absAssPath := filepath.Join(cwd, assPath)
-	outputPath := filepath.Join(cwd, stepParam.TaskBasePath, "output", outputFileName)
+	taskID := filepath.Base(stepParam.TaskBasePath)
+	outputPath := filepath.Join(cwd, "output", taskID+"_"+outputFileName)
 	os.MkdirAll(filepath.Dir(outputPath), 0755)
 
 	cmd := exec.Command(storage.FfmpegPath, "-y", "-i", input, "-vf", fmt.Sprintf("ass=%s", strings.ReplaceAll(absAssPath, "\\", "/")), "-c:a", "aac", "-b:a", "192k", outputPath)
