@@ -310,10 +310,6 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 }
 
 func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, withTts bool) error {
-	outputFileName := types.SubtitleTaskVerticalEmbedVideoFileName
-	if isHorizontal {
-		outputFileName = types.SubtitleTaskHorizontalEmbedVideoFileName
-	}
 	assPath := filepath.Join(stepParam.TaskBasePath, "formatted_subtitles.ass")
 
 	if err := srtToAss(stepParam.BilingualSrtFilePath, assPath, isHorizontal, stepParam); err != nil {
@@ -327,8 +323,29 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 
 	cwd, _ := os.Getwd()
 	absAssPath := filepath.Join(cwd, assPath)
-	taskID := filepath.Base(stepParam.TaskBasePath)
-	outputPath := filepath.Join(cwd, "output", taskID+"_"+outputFileName)
+
+	// Generate filename: YYYY-MM-DD_<video_id>_<type>_embed.mp4
+	now := time.Now()
+	dateStr := now.Format("2006-01-02")
+
+	// Extract video ID from URL or use task ID
+	videoID := filepath.Base(stepParam.TaskBasePath)
+	if strings.Contains(stepParam.Link, "youtube.com") || strings.Contains(stepParam.Link, "youtu.be") {
+		if id := extractYouTubeID(stepParam.Link); id != "" {
+			videoID = id
+		}
+	} else if strings.Contains(stepParam.Link, "local:") {
+		localPath := strings.TrimPrefix(stepParam.Link, "local:")
+		videoID = strings.TrimSuffix(filepath.Base(localPath), filepath.Ext(localPath))
+	}
+
+	fileType := "vertical"
+	if isHorizontal {
+		fileType = "horizontal"
+	}
+	outputFileName := fmt.Sprintf("%s_%s_%s_embed.mp4", dateStr, videoID, fileType)
+
+	outputPath := filepath.Join(cwd, "output", outputFileName)
 	os.MkdirAll(filepath.Dir(outputPath), 0755)
 
 	cmd := exec.Command(storage.FfmpegPath, "-y", "-i", input, "-vf", fmt.Sprintf("ass=%s", strings.ReplaceAll(absAssPath, "\\", "/")), "-c:a", "aac", "-b:a", "192k", outputPath)
@@ -338,6 +355,15 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 		return fmt.Errorf("embedSubtitles embed subtitle into video ffmpeg error: %w", err)
 	}
 	return nil
+}
+
+func extractYouTubeID(url string) string {
+	re := regexp.MustCompile(`(?:youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/)([a-zA-Z0-9_-]{11})`)
+	matches := re.FindStringSubmatch(url)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
 }
 
 func getFontPaths() (string, string, error) {

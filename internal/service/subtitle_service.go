@@ -173,9 +173,10 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		}
 
 		// HITL: Generate review.txt and wait for review
-		targetSrtPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTargetLanguageSrtFileName)
+		// Use bilingual_srt.srt which contains: line1=Chinese translation, line2=English original
+		bilingualSrtPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskBilingualSrtFileName)
 		hitlSvc := s.getHITLService()
-		doc, err := hitlSvc.CreateReview(stepParam.TaskId, targetSrtPath, stepParam.TaskPtr.Title, string(stepParam.TargetLanguage))
+		doc, err := hitlSvc.CreateReviewFromBilingual(stepParam.TaskId, bilingualSrtPath, stepParam.TaskPtr.Title, string(stepParam.TargetLanguage))
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask CreateReview err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed

@@ -211,11 +211,19 @@ curl -s "http://127.0.0.1:8899/api/capability/subtitleTask?taskId=<task_id>"
 # Done when process_percent = 100 and video_url is present
 ```
 
-## Output Location
+## Output Location & Filename
 
-Final video is saved to `./output/<task_id>_<type>_embed.mp4`:
-- `./output/<task_id>_vertical_embed.mp4` - Vertical video (9:16)
-- `./output/<task_id>_horizontal_embed.mp4` - Horizontal video (16:9)
+Final video is saved to `./output/<date>_<topic>_<type>_embed.mp4`:
+
+**Filename format:** `YYYY-MM-DD_<video_id>_<type>_embed.mp4`
+
+**Example:** `2026-05-07_KyVWnPdS8Yg_vertical_embed.mp4`
+
+- **Date**: Creation date (YYYY-MM-DD)
+- **Video ID**: YouTube video ID or task identifier
+- **Type**: `vertical` (9:16) or `horizontal` (16:9)
+
+**Note:** For YouTube videos, the video ID is extracted from the URL. For local files, use the filename without extension.
 
 ## Testing
 

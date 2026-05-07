@@ -112,6 +112,78 @@ func (s ReviewService) CreateReview(taskID, srtPath, videoTitle, language string
 	}, nil
 }
 
+func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, videoTitle, language string) (ReviewDocument, error) {
+	srtFile, err := os.Open(bilingualSrtPath)
+	if err != nil {
+		return ReviewDocument{}, err
+	}
+	defer srtFile.Close()
+
+	var segments []Segment
+	index := 1
+	var currentStart, currentEnd time.Time
+	var chineseText, englishText string
+	state := 0 // 0: index, 1: time, 2: chinese, 3: english
+
+	scanner := bufio.NewScanner(srtFile)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if line == "" {
+			if state == 3 && index > 0 {
+				segments = append(segments, Segment{
+					Index:    index,
+					Start:    currentStart,
+					End:      currentEnd,
+					Original: englishText,
+					Edited:   CleanPunctuation(chineseText),
+				})
+			}
+			state = 0
+			chineseText = ""
+			englishText = ""
+			continue
+		}
+
+		if state == 0 {
+			if n, err := fmt.Sscanf(line, "%d", new(int)); err == nil && n > 0 {
+				index = n
+				state = 1
+			}
+		} else if state == 1 {
+			var startStr, endStr string
+			if _, err := fmt.Sscanf(line, "%12s --> %12s", &startStr, &endStr); err == nil {
+				currentStart, _ = parseTimestamp(startStr)
+				currentEnd, _ = parseTimestamp(endStr)
+				state = 2
+			}
+		} else if state == 2 {
+			chineseText = line
+			state = 3
+		} else if state == 3 {
+			englishText = line
+		}
+	}
+
+	if state == 3 && index > 0 {
+		segments = append(segments, Segment{
+			Index:    index,
+			Start:    currentStart,
+			End:      currentEnd,
+			Original: englishText,
+			Edited:   CleanPunctuation(chineseText),
+		})
+	}
+
+	return ReviewDocument{
+		TaskID:     taskID,
+		VideoTitle: videoTitle,
+		Language:   language,
+		Segments:   segments,
+		CreatedAt:  time.Now(),
+	}, nil
+}
+
 func (s ReviewService) SaveReview(doc ReviewDocument, path string) error {
 	content, err := s.Parser.Generate(doc)
 	if err != nil {
