@@ -12,8 +12,14 @@ metadata:
 
 Translate videos with the full pipeline:
 ```
-影片 → 音軌分離 → STT → 字幕切割 → LLM 翻譯 → TTS 合成 → 字幕燒錄 → 合併影片
+影片 → 音軌分離 → STT → 字幕切割 → LLM 翻譯 → [HITL 審核] → TTS 合成 → 字幕燒錄 → 合併影片
 ```
+
+**HITL 審核流程：**
+1. 翻譯完成後 → 生成 `review.txt` 等待審核
+2. 人員編輯 `字幕：` 行（可修改內容）
+3. 核准 → 清理標點 → 繼續 TTS
+4. 否決 → 可重新翻譯
 
 ## Endpoints (aiark.com.tw)
 
@@ -105,6 +111,66 @@ POST /api/capability/subtitleTask
 }
 ```
 
+## HITL Review System (INTEGRATED)
+
+### Workflow
+1. Translation completed → Generate `review.txt`
+2. Task status = `pending_review` (process_percent = 90)
+3. Poll `GET /api/hitl/status/<task_id>` until approved
+4. Call `POST /api/hitl/approve/<task_id>` to continue TTS
+5. Or call `POST /api/hitl/reject/<task_id>` with reason to abort
+
+### Review.txt Format
+```
+【第 1 句】 00:00:12,000 --> 00:00:15,500
+原文：Hello world, how are you?
+字幕：你好世界 你好嗎
+
+【第 2 句】 00:00:15,500 --> 00:00:18,200
+原文：I'm fine, thank you.
+字幕：我很好 謝謝你
+```
+
+### 標點清理
+核准時所有標點符號會被清理成空格
+
+### HITL API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/hitl/review/<task_id>` | Get review.txt content |
+| POST | `/api/hitl/approve/<task_id>` | Approve and continue TTS |
+| POST | `/api/hitl/reject/<task_id>` | Reject with reason |
+| GET | `/api/hitl/status/<task_id>` | Get review status |
+
+### Example Workflow
+```bash
+# Start task (will pause at 90% for review)
+curl -s http://127.0.0.1:8899/api/capability/subtitleTask -X POST ... | jq '.data.task_id'
+
+# Poll until status shows pending_review
+curl -s "http://127.0.0.1:8899/api/hitl/status/<task_id>"
+
+# Get review content
+curl -s "http://127.0.0.1:8899/api/hitl/review/<task_id>"
+
+# Approve and continue
+curl -s -X POST "http://127.0.0.1:8899/api/hitl/approve/<task_id>"
+
+# Or reject
+curl -s -X POST "http://127.0.0.1:8899/api/hitl/reject/<task_id>" -d '{"reason":"翻譯錯誤"}'
+```
+
+### Files
+- `internal/agent/hitl/entity.go` - ReviewDocument, Segment 實體
+- `internal/agent/hitl/parser.go` - TxtParser (parse/generate review.txt)
+- `internal/agent/hitl/merger.go` - SRTMerger (合併編輯回 SRT)
+- `internal/agent/hitl/service.go` - ReviewService (workflow)
+- `internal/agent/hitl/cleaner.go` - CleanPunctuation (清理標點)
+- `internal/service/subtitle_service.go` - Integration with waitForReview loop
+- `internal/handler/hitl_review.go` - HITL API handlers
+- `internal/router/router.go` - HITL API routes
+
 ## Key Files
 
 - `internal/service/audio2subtitle.go` - STT + translation pipeline
@@ -119,7 +185,9 @@ POST /api/capability/subtitleTask
 Use this skill when:
 - Translating English videos to Chinese with dubbed audio
 - Burning bilingual subtitles into video
-- Processing videos through the full STT→Translate→TTS→Merge pipeline
+- Processing videos through the full STT→Translate→Review→TTS→Merge pipeline
+
+**Note:** HITL review system is **INTEGRATED** - tasks will pause at 90% for review before TTS.
 
 ## Common Issues
 

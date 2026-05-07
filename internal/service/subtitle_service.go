@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"krillin-ai/internal/agent/hitl"
 	"krillin-ai/internal/dto"
 	"krillin-ai/internal/storage"
 	"krillin-ai/internal/types"
@@ -13,6 +15,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 )
@@ -167,6 +171,37 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			stepParam.TaskPtr.FailReason = err.Error()
 			return
 		}
+
+		// HITL: Generate review.txt and wait for review
+		targetSrtPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTargetLanguageSrtFileName)
+		hitlSvc := s.getHITLService()
+		doc, err := hitlSvc.CreateReview(stepParam.TaskId, targetSrtPath, stepParam.TaskPtr.Title, string(stepParam.TargetLanguage))
+		if err != nil {
+			log.GetLogger().Error("StartVideoSubtitleTask CreateReview err", zap.Any("req", req), zap.Error(err))
+			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
+			stepParam.TaskPtr.FailReason = err.Error()
+			return
+		}
+
+		reviewPath := filepath.Join(stepParam.TaskBasePath, "review.txt")
+		err = hitlSvc.SaveReview(doc, reviewPath)
+		if err != nil {
+			log.GetLogger().Error("StartVideoSubtitleTask SaveReview err", zap.Any("req", req), zap.Error(err))
+			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
+			stepParam.TaskPtr.FailReason = err.Error()
+			return
+		}
+
+		// Set status to pending review
+		stepParam.TaskPtr.Status = types.SubtitleTaskStatusPendingReview
+		stepParam.TaskPtr.ProcessPct = 90
+		log.GetLogger().Info("video subtitle task pending review", zap.String("taskId", taskId), zap.String("reviewPath", reviewPath))
+
+		// Wait for review (blocking loop)
+		s.waitForReview(&stepParam, reviewPath, ctx)
+
+		// Review approved, continue with TTS
+		log.GetLogger().Info("video subtitle continue after review", zap.String("taskId", taskId))
 		err = s.srtFileToSpeech(ctx, &stepParam)
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask srtFileToSpeech err", zap.Any("req", req), zap.Error(err))
@@ -224,4 +259,69 @@ func (s Service) GetTaskStatus(req dto.GetVideoSubtitleTaskReq) (*dto.GetVideoSu
 		TargetLanguage:    taskPtr.TargetLanguage,
 		SpeechDownloadUrl: taskPtr.SpeechDownloadUrl,
 	}, nil
+}
+
+func (s Service) getHITLService() hitl.ReviewService {
+	baseDir, _ := os.Getwd()
+	return hitl.NewReviewService(
+		hitl.TxtParser{},
+		hitl.SRTMerger{},
+		filepath.Join(baseDir, "tasks"),
+	)
+}
+
+func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPath string, ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			task, ok := storage.SubtitleTasks.Load(stepParam.TaskId)
+			if !ok {
+				return
+			}
+			taskPtr := task.(*types.SubtitleTask)
+
+			// Check if status changed from pending_review (e.g., approved by external API)
+			if taskPtr.Status == types.SubtitleTaskStatusProcessing && taskPtr.ProcessPct > 90 {
+				// Review was approved externally, continue
+				return
+			}
+
+			// Check for manual approval via status.json
+			statusPath := filepath.Join(stepParam.TaskBasePath, "status.json")
+			if data, err := os.ReadFile(statusPath); err == nil {
+				var status hitl.TaskStatus
+				if err := json.Unmarshal(data, &status); err == nil {
+					if status.Status == hitl.StatusApproved {
+						// Apply edited segments to SRT
+						hitlSvc := s.getHITLService()
+						finalSRTPath, err := hitlSvc.Approve(stepParam.TaskId, reviewPath)
+						if err != nil {
+							log.GetLogger().Error("waitForReview Approve err", zap.Error(err))
+							return
+						}
+						// Update stepParam for TTS to use final.srt
+						bilingualPath := filepath.Join(stepParam.TaskBasePath, "bilingual_srt.srt")
+						os.Rename(bilingualPath, bilingualPath+".bak")
+						// Copy final.srt as the new bilingual_srt for TTS
+						finalContent, _ := os.ReadFile(finalSRTPath)
+						os.WriteFile(bilingualPath, finalContent, 0644)
+						stepParam.BilingualSrtFilePath = bilingualPath
+						stepParam.TaskPtr.Status = types.SubtitleTaskStatusProcessing
+						stepParam.TaskPtr.ProcessPct = 91
+						return
+					}
+					if status.Status == hitl.StatusRejected {
+						stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
+						stepParam.TaskPtr.FailReason = status.RejectReason
+						return
+					}
+				}
+			}
+		}
+	}
 }

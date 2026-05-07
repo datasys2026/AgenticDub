@@ -268,9 +268,10 @@ const (
 )
 
 const (
-	SubtitleTaskStatusProcessing uint8 = iota + 1
+	SubtitleTaskStatusProcessing    uint8 = iota + 1
 	SubtitleTaskStatusSuccess
 	SubtitleTaskStatusFailed
+	SubtitleTaskStatusPendingReview // HITL: waiting for review
 )
 
 const (

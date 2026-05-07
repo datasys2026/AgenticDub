@@ -1,0 +1,33 @@
+[app]
+    segment_duration = 5
+    transcribe_parallel_num = 1
+    translate_parallel_num = 3
+    transcribe_max_attempts = 3
+    translate_max_attempts = 5
+    max_sentence_length = 70
+    proxy = ""
+
+[server]
+    host = "127.0.0.1"
+    port = 8888
+
+[llm]
+    base_url = "https://aiark.com.tw"
+    api_key = "datasys2026"
+    model = "aiark/gemma4-e2b"
+    json = false
+
+[transcribe]
+    provider = "openai"
+    enable_gpu_acceleration = false
+    [transcribe.openai]
+        base_url = "https://aiark.com.tw"
+        api_key = "datasys2026"
+        model = "aiark/faster-whisper-large-v3-fp16"
+
+[tts]
+    provider = "openai"
+    [tts.openai]
+        base_url = "https://aiark.com.tw"
+        api_key = "datasys2026"
+        model = "aiark/qwen3-tts-0.6b-customvoice"

@@ -20,6 +20,12 @@ func SetupRouter(r *gin.Engine) {
 		api.HEAD("/file/*filepath", hdl.DownloadFile)
 		api.GET("/config", hdl.GetConfig)
 		api.POST("/config", hdl.UpdateConfig)
+
+		// HITL Review APIs
+		api.GET("/hitl/review/:task_id", hdl.GetReview)
+		api.POST("/hitl/approve/:task_id", hdl.ApproveReview)
+		api.POST("/hitl/reject/:task_id", hdl.RejectReview)
+		api.GET("/hitl/status/:task_id", hdl.GetReviewStatus)
 	}
 
 	r.GET("/", func(c *gin.Context) {
