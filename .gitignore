@@ -16,3 +16,6 @@ dist/
 
 # Binary
 krillin-ai
+
+# Output (generated videos)
+output/
