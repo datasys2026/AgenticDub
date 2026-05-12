@@ -1255,9 +1255,9 @@ func parseAndCheckContent(splitContent, originalText string) ([]*TranslatedItem,
 		if splitContent == originalText {
 			return result, nil
 		} else if splitContent == "" {
-			return nil, fmt.Errorf("splitContent is empty but originalText is not, originalText: " + originalText)
+			return nil, fmt.Errorf("splitContent is empty but originalText is not, originalText: %s", originalText)
 		} else {
-			return nil, errors.New("originalText is empty but splitContent is not, splitContent: " + splitContent)
+			return nil, fmt.Errorf("originalText is empty but splitContent is not, splitContent: %s", splitContent)
 		}
 	}
 

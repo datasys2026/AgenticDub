@@ -1,6 +1,9 @@
 package agent
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+)
 
 type TaskStep string
 
@@ -162,4 +165,53 @@ func (s *TaskState) Reset() {
 	s.ReviewApproved = false
 	s.RejectReason = ""
 	s.Error = ""
+}
+
+type taskStateJSON struct {
+	TaskID         string     `json:"task_id"`
+	CurrentStep    string     `json:"current_step"`
+	Status         string     `json:"status"`
+	History        []string   `json:"history"`
+	PausedAt       string     `json:"paused_at"`
+	ReviewApproved bool       `json:"review_approved"`
+	RejectReason   string     `json:"reject_reason"`
+	Error          string     `json:"error"`
+}
+
+func (s *TaskState) Serialize() ([]byte, error) {
+	data := taskStateJSON{
+		TaskID:         s.TaskID,
+		CurrentStep:    string(s.CurrentStep),
+		Status:         string(s.Status),
+		History:        make([]string, len(s.History)),
+		PausedAt:       string(s.PausedAt),
+		ReviewApproved: s.ReviewApproved,
+		RejectReason:   s.RejectReason,
+		Error:          s.Error,
+	}
+	for i, h := range s.History {
+		data.History[i] = string(h)
+	}
+	return json.Marshal(data)
+}
+
+func DeserializeTaskState(data []byte) (*TaskState, error) {
+	var s taskStateJSON
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, err
+	}
+	state := &TaskState{
+		TaskID:         s.TaskID,
+		Status:         TaskStatus(s.Status),
+		PausedAt:       TaskStep(s.PausedAt),
+		ReviewApproved: s.ReviewApproved,
+		RejectReason:   s.RejectReason,
+		Error:          s.Error,
+	}
+	state.CurrentStep = TaskStep(s.CurrentStep)
+	state.History = make([]TaskStep, len(s.History))
+	for i, h := range s.History {
+		state.History[i] = TaskStep(h)
+	}
+	return state, nil
 }
