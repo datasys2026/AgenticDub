@@ -3,13 +3,15 @@ package translator
 import (
 	"context"
 	"testing"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type MockLLM struct {
 	ShouldFail bool
 }
 
-func (m *MockLLM) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
+func (m *MockLLM) ChatCompletion(ctx context.Context, messages []llm.Message) (*llm.ChatCompletionResponse, error) {
 	if m.ShouldFail {
 		return nil, ErrTranslationFailed
 	}
@@ -17,24 +19,24 @@ func (m *MockLLM) ChatCompletion(ctx context.Context, messages []Message) (*Chat
 	content := messages[0].Content
 
 	if contains(content, "Translate the following subtitles") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `["哈囉大家好","我是布魯諾","這是測試"]`,
 		}, nil
 	}
 
 	if contains(content, "Review these direct translations") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `["","OK","Too long"]`,
 		}, nil
 	}
 
 	if contains(content, "Create final polished translations") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `["哈囉大家好","我是布魯諾","這是測試影片"]`,
 		}, nil
 	}
 
-	return &ChatCompletionResponse{
+	return &llm.ChatCompletionResponse{
 		Content: `["Translated"]`,
 	}, nil
 }

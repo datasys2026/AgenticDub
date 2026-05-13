@@ -16,6 +16,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"krillin-ai/internal/providers/llm"
 	"krillin-ai/internal/translator"
 )
 
@@ -273,7 +274,7 @@ type AiarkLLM struct {
 	apiKey string
 }
 
-func (l *AiarkLLM) ChatCompletion(ctx context.Context, messages []translator.Message) (*translator.ChatCompletionResponse, error) {
+func (l *AiarkLLM) ChatCompletion(ctx context.Context, messages []llm.Message) (*llm.ChatCompletionResponse, error) {
 	payload := map[string]interface{}{
 		"model": l.model,
 		"messages": messages,
@@ -310,7 +311,7 @@ func (l *AiarkLLM) ChatCompletion(ctx context.Context, messages []translator.Mes
 		return nil, fmt.Errorf("no response from LLM")
 	}
 
-	return &translator.ChatCompletionResponse{
+	return &llm.ChatCompletionResponse{
 		Content: result.Choices[0].Message.Content,
 	}, nil
 }

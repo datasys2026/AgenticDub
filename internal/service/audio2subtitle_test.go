@@ -2,33 +2,32 @@ package service
 
 import (
 	"fmt"
-	"krillin-ai/config"
-	"krillin-ai/log"
 	"os"
 	"testing"
 
 	"github.com/BurntSushi/toml"
 	"go.uber.org/zap"
+
+	"krillin-ai/config"
+	"krillin-ai/log"
 )
 
 func Test_isValidSplitContent(t *testing.T) {
-	// 固定的测试文件路径
+	t.Skip("Integration test - requires local files and LLM endpoint")
+
 	splitContentFile := "g:\\bin\\AI\\tasks\\gdQRrtQP\\srt_no_ts_1.srt"
 	originalTextFile := "g:\\bin\\AI\\tasks\\gdQRrtQP\\output\\origin_1.txt"
 
-	// 读取分割内容文件
 	splitContent, err := os.ReadFile(splitContentFile)
 	if err != nil {
 		t.Fatalf("读取分割内容文件失败: %v", err)
 	}
 
-	// 读取原始文本文件
 	originalText, err := os.ReadFile(originalTextFile)
 	if err != nil {
 		t.Fatalf("读取原始文本文件失败: %v", err)
 	}
 
-	// 执行测试
 	if _, err := parseAndCheckContent(string(splitContent), string(originalText)); err != nil {
 		t.Errorf("parseAndCheckContent() error = %v, want nil", err)
 	}
@@ -57,10 +56,10 @@ func initService() *Service {
 }
 
 func Test_splitOriginLongSentence(t *testing.T) {
-	// 固定的测试文件路径
+	t.Skip("Integration test - requires LLM endpoint")
+
 	testText := "then one more thing is search for file count file explorer note count is the name of the plug in install it and once enabled you can see that now I can see how many files are in each are inside each individual folder even the nested folders are showing properly now how many files are in them"
 	s := initService()
-	// 执行测试
 	splitTextSentences, err := s.splitOriginLongSentence(testText)
 	if err != nil {
 		t.Errorf("splitOriginLongSentence() error = %v, want nil", err)

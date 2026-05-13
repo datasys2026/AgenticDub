@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type TranslationStrategy string
@@ -39,24 +41,10 @@ type TranslationPlan struct {
 }
 
 type Planner struct {
-	llm LLMProvider
+	llm llm.LLMProvider
 }
 
-type LLMProvider interface {
-	ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error)
-	Name() string
-}
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ChatCompletionResponse struct {
-	Content string `json:"content"`
-}
-
-func NewPlanner(llm LLMProvider) *Planner {
+func NewPlanner(llm llm.LLMProvider) *Planner {
 	return &Planner{llm: llm}
 }
 
@@ -73,7 +61,7 @@ func (p *Planner) AnalyzeVideo(ctx context.Context, transcript string) (*VideoAn
 
 只輸出 JSON，不要其他文字。`, transcript)
 
-	resp, err := p.llm.ChatCompletion(ctx, []Message{{Role: "user", Content: prompt}})
+	resp, err := p.llm.ChatCompletion(ctx, []llm.Message{{Role: "user", Content: prompt}})
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +99,7 @@ func (p *Planner) CreatePlan(ctx context.Context, analysis *VideoAnalysis) (*Tra
 
 只輸出JSON。`, analysis.Language, analysis.Domain, analysis.SpeakerCount, analysis.HasMusic, analysis.Complexity)
 
-	resp, err := p.llm.ChatCompletion(ctx, []Message{{Role: "user", Content: prompt}})
+	resp, err := p.llm.ChatCompletion(ctx, []llm.Message{{Role: "user", Content: prompt}})
 	if err != nil {
 		return nil, err
 	}
@@ -125,24 +113,24 @@ func (p *Planner) CreatePlan(ctx context.Context, analysis *VideoAnalysis) (*Tra
 	return &plan, nil
 }
 
-func (p *Planner) ExtractTerms(ctx context.Context, transcript, targetLang string) ([]Term, error) {
+func (p *Planner) ExtractTerms(ctx context.Context, transcript, targetLang string) ([]llm.Term, error) {
 	prompt := fmt.Sprintf(`從以下文字內容中提取需要一致翻譯的術語，輸出JSON陣列：
-每個術語包含：term(原文), translation(譯文), note(備註)
+	每個術語包含：term(原文), translation(譯文), note(備註)
 
-文字：
-%s
+	文字：
+	%s
 
-目標語言：%s
+	目標語言：%s
 
-只輸出JSON陣列。`, transcript, targetLang)
+	只輸出JSON陣列。`, transcript, targetLang)
 
-	resp, err := p.llm.ChatCompletion(ctx, []Message{{Role: "user", Content: prompt}})
+	resp, err := p.llm.ChatCompletion(ctx, []llm.Message{{Role: "user", Content: prompt}})
 	if err != nil {
 		return nil, err
 	}
 
 	jsonStr := extractJSON(resp.Content)
-	var terms []Term
+	var terms []llm.Term
 	if err := json.Unmarshal([]byte(jsonStr), &terms); err != nil {
 		return nil, ErrInvalidTerms
 	}
@@ -198,9 +186,3 @@ var (
 	ErrInvalidPlan     = errors.New("invalid translation plan")
 	ErrInvalidTerms    = errors.New("invalid terminology extraction")
 )
-
-type Term struct {
-	Term        string `json:"term"`
-	Translation string `json:"translation"`
-	Note        string `json:"note,omitempty"`
-}

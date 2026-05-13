@@ -2,6 +2,7 @@ package service
 
 import (
 	"krillin-ai/config"
+	"krillin-ai/internal/providers/llm"
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
 	"krillin-ai/pkg/aliyun"
@@ -47,7 +48,18 @@ func NewService() *Service {
 	}
 	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", config.Conf.Transcribe.Provider))
 
-	chatCompleter = openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy)
+	switch config.Conf.Llm.Provider {
+	case "openai":
+		provider := llm.NewOpenAIProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model, config.Conf.Llm.ProxyAddr)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	case "aiark":
+		provider := llm.NewAiarkLLMProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	default:
+		provider := llm.NewOpenAIProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model, config.Conf.Llm.ProxyAddr)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	}
+	log.GetLogger().Info("当前选择的LLM： ", zap.String("llm", config.Conf.Llm.Provider))
 
 	switch config.Conf.Tts.Provider {
 	case "openai":

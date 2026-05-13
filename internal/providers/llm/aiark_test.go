@@ -44,65 +44,6 @@ func (m *MockLLMProvider) Name() string {
 	return "mock-llm"
 }
 
-type AiarkLLMProvider struct {
-	baseURL  string
-	apiKey   string
-	model    string
-	endpoint string
-}
-
-func NewAiarkLLMProvider(baseURL, apiKey, model string) *AiarkLLMProvider {
-	return &AiarkLLMProvider{
-		baseURL:  baseURL,
-		apiKey:   apiKey,
-		model:    model,
-		endpoint: "/v1/chat/completions",
-	}
-}
-
-func (p *AiarkLLMProvider) Name() string {
-	return "aiark-llm"
-}
-
-func (p *AiarkLLMProvider) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
-	reqBody := map[string]interface{}{
-		"model": p.model,
-		"messages": messages,
-	}
-
-	if strings.Contains(p.model, "deepseek") || strings.Contains(p.model, "gemma4:26b") {
-		reqBody["think"] = false
-	}
-
-	resp, err := p.makeRequest(ctx, reqBody)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ChatCompletionResponse{
-		Content: resp.Content,
-	}, nil
-}
-
-func (p *AiarkLLMProvider) makeRequest(ctx context.Context, body map[string]interface{}) (*chatResponse, error) {
-	jsonData, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := newChatRequest(ctx, p.baseURL+p.endpoint, p.apiKey, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := doChatRequest(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-
-	return parseChatResponse(resp)
-}
-
 func TestDirectTranslation(t *testing.T) {
 	provider := &MockLLMProvider{}
 	ctx := context.Background()
@@ -200,6 +141,16 @@ func TestJSONArrayParsing(t *testing.T) {
 		}
 		if len(result) != 2 {
 			t.Errorf("expected 2 elements, got %d", len(result))
+		}
+	})
+}
+
+func TestAiarkLLMProvider(t *testing.T) {
+	t.Run("AiarkLLMProvider implements LLMProvider", func(t *testing.T) {
+		provider := NewAiarkLLMProvider("http://localhost:4000", "test-key", "aiark/gemma4-e2b")
+		var llmProvider LLMProvider = provider
+		if llmProvider.Name() != "aiark-llm" {
+			t.Errorf("expected name 'aiark-llm', got '%s'", llmProvider.Name())
 		}
 	})
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	llmprovider "krillin-ai/internal/providers/llm"
 )
 
 type MockSTTTool struct {
@@ -134,7 +136,7 @@ func TestLLMTool_Execute(t *testing.T) {
 	output, err := llm.Execute(context.Background(), LLMInput{
 		Text:        "Hello world",
 		TargetLang:  "繁體中文",
-		Terminology: []Term{},
+		Terminology: []llmprovider.Term{},
 	})
 
 	if err != nil {

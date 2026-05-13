@@ -5,32 +5,34 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type MockPlannerLLM struct{}
 
-func (m *MockPlannerLLM) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
+func (m *MockPlannerLLM) ChatCompletion(ctx context.Context, messages []llm.Message) (*llm.ChatCompletionResponse, error) {
 	content := messages[0].Content
 
 	if strings.Contains(content, "分析以下影片") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `{"language":"en","domain":"tech","speaker_count":1,"has_music":false,"complexity":"medium"}`,
 		}, nil
 	}
 
 	if strings.Contains(content, "規劃翻譯流程") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `{"strategy":"reflective","terminology_extraction":true,"voice_cloning":false,"tts_voice":"default","batch_size":8,"max_chars_cjk":42,"max_chars_latin":47,"concurrent_tts":4,"priority":"quality","steps":["stt","translate","tts","compose"]}`,
 		}, nil
 	}
 
 	if strings.Contains(content, "提取需要一致翻譯的術語") {
-		return &ChatCompletionResponse{
+		return &llm.ChatCompletionResponse{
 			Content: `[{"term":"AI","translation":"人工智慧","note":"技術術語"},{"term":"GPU","translation":"顯示卡","note":"硬體術語"}]`,
 		}, nil
 	}
 
-	return &ChatCompletionResponse{
+	return &llm.ChatCompletionResponse{
 		Content: "mock response",
 	}, nil
 }
@@ -171,7 +173,7 @@ func TestVideoAnalysis_Fields(t *testing.T) {
 
 type MockPlannerLLMErrors struct{}
 
-func (m *MockPlannerLLMErrors) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
+func (m *MockPlannerLLMErrors) ChatCompletion(ctx context.Context, messages []llm.Message) (*llm.ChatCompletionResponse, error) {
 	return nil, errors.New("LLM error")
 }
 

@@ -119,7 +119,7 @@ func (h Handler) GetConfig(c *gin.Context) {
 			ApiKey  string `json:"apiKey"`
 			Model   string `json:"model"`
 		}{
-			BaseUrl: config.Conf.Llm.BaseUrl,
+			BaseUrl: config.Conf.Llm.BaseURL,
 			ApiKey:  config.Conf.Llm.ApiKey,
 			Model:   config.Conf.Llm.Model,
 		},
@@ -195,7 +195,7 @@ func (h Handler) UpdateConfig(c *gin.Context) {
 	config.Conf.Server.Port = req.Server.Port
 
 	// 更新LLM配置
-	config.Conf.Llm.BaseUrl = req.Llm.BaseUrl
+	config.Conf.Llm.BaseURL = req.Llm.BaseUrl
 	config.Conf.Llm.ApiKey = req.Llm.ApiKey
 	config.Conf.Llm.Model = req.Llm.Model
 

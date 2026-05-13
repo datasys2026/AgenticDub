@@ -87,7 +87,7 @@ type OpenAiWhisper struct {
 type Config struct {
 	App        App                    `toml:"app"`
 	Server     Server                 `toml:"server"`
-	Llm        OpenaiCompatibleConfig `toml:"llm"`
+	Llm        LLMConfig              `toml:"llm"`
 	Transcribe Transcribe             `toml:"transcribe"`
 	Tts        Tts                    `toml:"tts"`
 	Mcp        McpConfig             `toml:"mcp"`
@@ -95,6 +95,14 @@ type Config struct {
 
 type McpConfig struct {
 	ServerURL string `toml:"server_url"`
+}
+
+type LLMConfig struct {
+	Provider  string `toml:"provider"`
+	Model     string `toml:"model"`
+	BaseURL   string `toml:"base_url"`
+	ApiKey    string `toml:"api_key"`
+	ProxyAddr string `toml:"proxy_addr"`
 }
 
 var Conf = Config{
@@ -110,8 +118,10 @@ var Conf = Config{
 		Host: "127.0.0.1",
 		Port: 8888,
 	},
-	Llm: OpenaiCompatibleConfig{
-		Model: "gpt-4o-mini",
+	Llm: LLMConfig{
+		Provider: "aiark",
+		Model:   "aiark/gemma4-e2b",
+		BaseURL: "https://aiark.com.tw/v1",
 	},
 	Transcribe: Transcribe{
 		Provider:              "openai",

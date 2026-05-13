@@ -604,7 +604,7 @@ func createServerConfigGroup() *fyne.Container {
 // 创建LLM配置组
 func createLlmConfigGroup() *fyne.Container {
 	baseUrlEntry := StyledEntry("API Base URL")
-	baseUrlEntry.Bind(binding.BindString(&config.Conf.Llm.BaseUrl))
+	baseUrlEntry.Bind(binding.BindString(&config.Conf.Llm.BaseURL))
 	llmBaseUrlEntryRef = baseUrlEntry
 
 	apiKeyEntry := StyledPasswordEntry("API Key")
