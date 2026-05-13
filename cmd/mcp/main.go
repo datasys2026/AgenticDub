@@ -8,25 +8,22 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
+
+	"krillin-ai/config"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-type Config struct {
-	ServerURL string
-}
+var serverURL string
 
-var cfg = &Config{
-	ServerURL: getEnv("KRILLIN_SERVER_URL", "http://127.0.0.1:8899"),
-}
-
-func getEnv(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
+func init() {
+	config.LoadConfig()
+	if config.Conf.Mcp.ServerURL != "" {
+		serverURL = config.Conf.Mcp.ServerURL
+	} else {
+		serverURL = fmt.Sprintf("http://%s:%d", config.Conf.Server.Host, config.Conf.Server.Port)
 	}
-	return defaultVal
 }
 
 type TranslateVideoInput struct {
@@ -83,7 +80,7 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 		return nil, TranslateVideoOutput{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := http.Post(cfg.ServerURL+"/api/capability/subtitleTask", "application/json", bytes.NewReader(body))
+	resp, err := http.Post(serverURL+"/api/capability/subtitleTask", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, TranslateVideoOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -128,7 +125,7 @@ func GetTaskStatus(ctx context.Context, req *mcp.CallToolRequest, input GetTaskS
 		return nil, GetTaskStatusOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(cfg.ServerURL + "/api/capability/subtitleTask?taskId=" + input.TaskID)
+	resp, err := http.Get(serverURL + "/api/capability/subtitleTask?taskId=" + input.TaskID)
 	if err != nil {
 		return nil, GetTaskStatusOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -198,7 +195,7 @@ func ListTasks(ctx context.Context, req *mcp.CallToolRequest, input ListTasksInp
 	tasks := []TaskSummary{}
 
 	for i := 0; i < input.Limit; i++ {
-		resp, err := http.Get(cfg.ServerURL + fmt.Sprintf("/api/capability/subtitleTask?taskId=task_%d", i))
+		resp, err := http.Get(serverURL + fmt.Sprintf("/api/capability/subtitleTask?taskId=task_%d", i))
 		if err != nil {
 			continue
 		}
@@ -224,7 +221,7 @@ func ApproveHITL(ctx context.Context, req *mcp.CallToolRequest, input ApproveHIT
 		return nil, ApproveHITLOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Post(cfg.ServerURL+"/api/hitl/approve/"+input.TaskID, "application/json", nil)
+	resp, err := http.Post(serverURL+"/api/hitl/approve/"+input.TaskID, "application/json", nil)
 	if err != nil {
 		return nil, ApproveHITLOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -255,7 +252,7 @@ func RejectHITL(ctx context.Context, req *mcp.CallToolRequest, input RejectHITLI
 	payload := map[string]string{"reason": input.Reason}
 	body, _ := json.Marshal(payload)
 
-	resp, err := http.Post(cfg.ServerURL+"/api/hitl/reject/"+input.TaskID, "application/json", bytes.NewReader(body))
+	resp, err := http.Post(serverURL+"/api/hitl/reject/"+input.TaskID, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, RejectHITLOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -282,7 +279,7 @@ func GetReview(ctx context.Context, req *mcp.CallToolRequest, input GetReviewInp
 		return nil, GetReviewOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(cfg.ServerURL + "/api/hitl/review/" + input.TaskID)
+	resp, err := http.Get(serverURL + "/api/hitl/review/" + input.TaskID)
 	if err != nil {
 		return nil, GetReviewOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -316,7 +313,7 @@ func GetReviewStatus(ctx context.Context, req *mcp.CallToolRequest, input GetRev
 		return nil, GetReviewStatusOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(cfg.ServerURL + "/api/hitl/status/" + input.TaskID)
+	resp, err := http.Get(serverURL + "/api/hitl/status/" + input.TaskID)
 	if err != nil {
 		return nil, GetReviewStatusOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -355,7 +352,7 @@ func contains(s, substr string) bool {
 
 func main() {
 	log.Println("Starting KrillinAI MCP Server...")
-	log.Printf("Server URL: %s", cfg.ServerURL)
+	log.Printf("Server URL: %s", serverURL)
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "krillin-ai",

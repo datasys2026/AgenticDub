@@ -11,6 +11,9 @@
     host = "127.0.0.1"
     port = 8888
 
+[mcp]
+    server_url = "http://127.0.0.1:8888" # MCP server 连接的后端地址
+
 # 下方的配置不是都要填，请结合文档说明进行配置
 
 [llm] #支持openai,deepseek,通义千问等所有兼容openai请求格式的模型服务

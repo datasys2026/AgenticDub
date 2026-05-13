@@ -90,6 +90,11 @@ type Config struct {
 	Llm        OpenaiCompatibleConfig `toml:"llm"`
 	Transcribe Transcribe             `toml:"transcribe"`
 	Tts        Tts                    `toml:"tts"`
+	Mcp        McpConfig             `toml:"mcp"`
+}
+
+type McpConfig struct {
+	ServerURL string `toml:"server_url"`
 }
 
 var Conf = Config{
