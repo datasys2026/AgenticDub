@@ -17,11 +17,11 @@ AI 影片翻譯配音工具（Go CLI）
 ## 快速開始
 
 ```bash
-# Web server mode（目前）
+# Web server mode
 go run ./cmd/server/main.go
 
-# 未來 CLI mode
-go run ./cmd/polydub/main.go run "https://youtube.com/watch?v=xxx"
+# MCP server mode（供 AI client 呼叫）
+go build -o krillin-mcp ./cmd/mcp/ && ./krillin-mcp
 ```
 
 ## 架構
@@ -29,6 +29,7 @@ go run ./cmd/polydub/main.go run "https://youtube.com/watch?v=xxx"
 ```
 cmd/
   server/              # Web server entry point (Gin)
+  mcp/                 # MCP server entry point
   polydub/             # 未來 CLI entry point (cobra)
 
 internal/
@@ -52,6 +53,62 @@ pkg/
   whisperkit/          # WhisperKit (macOS M-series)
   aliyun/              # 阿里雲 STT/TTS/OSS
   localtts/            # Edge-TTS
+```
+
+## MCP Server
+
+MCP server 讓 AI client（如 Claude Desktop）可以呼叫 KrillinAI 的翻譯功能。
+
+### 編譯
+
+```bash
+go build -o krillin-mcp ./cmd/mcp/
+```
+
+### 設定
+
+在 `config/config.toml` 設定 server URL：
+
+```toml
+[mcp]
+server_url = "http://127.0.0.1:8888"  # 預設使用 [server] 的 host:port
+```
+
+### Claude Desktop 配置
+
+```json
+{
+  "mcpServers": {
+    "krillin-ai": {
+      "command": "/absolute/path/to/krillin-mcp"
+    }
+  }
+}
+```
+
+### MCP Tools
+
+| Tool | 說明 |
+|------|------|
+| `translate_video` | 翻譯影片（URL → STT → 翻譯 → TTS → 燒錄） |
+| `get_task_status` | 查詢任務狀態 |
+| `list_tasks` | 列出所有任務 |
+| `approve_hitl` | 核准 HITL 審核，繼續 TTS |
+| `reject_hitl` | 否決 HITL 審核，放棄任務 |
+| `get_review` | 取得 review.txt 內容 |
+| `get_review_status` | 取得審核狀態 |
+
+### 使用範例
+
+```
+使用者：幫我翻譯這個影片 https://youtube.com/watch?v=xxx
+Claude：使用 translate_video tool
+        - url: "https://youtube.com/watch?v=xxx"
+        - target_lang: "繁體中文"
+        - tts: true
+        - voice: "Ryan"
+
+結果：task_id = "xxx_abc1"
 ```
 
 ## Phase 狀態
