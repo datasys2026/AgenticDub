@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -29,11 +30,31 @@ func (p *OpenAIProvider) Name() string {
 	return "openai"
 }
 
-func (p *OpenAIProvider) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
-	url := p.baseURL + "/chat/completions"
-	if !strings.HasSuffix(url, "/v1") && !strings.HasSuffix(url, "/v1/") {
-		url = strings.TrimSuffix(url, "/") + "/v1/chat/completions"
+func buildChatURL(baseURL string) string {
+	base := strings.TrimSuffix(baseURL, "/")
+	if strings.HasSuffix(base, "/v1") {
+		return base + "/chat/completions"
 	}
+	return base + "/v1/chat/completions"
+}
+
+func buildHTTPClient(proxyAddr string) *http.Client {
+	client := &http.Client{Timeout: 60 * time.Second}
+	if proxyAddr == "" {
+		return client
+	}
+	proxyURL, err := url.Parse(proxyAddr)
+	if err != nil {
+		return client
+	}
+	client.Transport = &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+	return client
+}
+
+func (p *OpenAIProvider) ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error) {
+	url := buildChatURL(p.baseURL)
 
 	reqBody := map[string]any{
 		"model":    p.model,
@@ -53,12 +74,7 @@ func (p *OpenAIProvider) ChatCompletion(ctx context.Context, messages []Message)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	if p.proxyAddr != "" {
-		client.Transport = &http.Transport{
-			Proxy: http.ProxyURL(nil),
-		}
-	}
+	client := buildHTTPClient(p.proxyAddr)
 
 	resp, err := client.Do(req)
 	if err != nil {

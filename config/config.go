@@ -149,6 +149,13 @@ var Conf = Config{
 
 // 检查必要的配置是否完整
 func validateConfig() error {
+	// 检查LLM服务提供商
+	switch Conf.Llm.Provider {
+	case "openai", "aiark", "ollama":
+	default:
+		return fmt.Errorf("不支持的LLM提供商: %s（可选：openai, aiark, ollama）", Conf.Llm.Provider)
+	}
+
 	// 检查转写服务提供商配置
 	switch Conf.Transcribe.Provider {
 	case "openai":

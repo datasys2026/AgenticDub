@@ -19,7 +19,7 @@
 [llm] #LLM provider: aiark, openai
     provider = "aiark" # LLM provider selection
     base_url = "https://aiark.com.tw/v1" # Base URL for LLM API
-    api_key = "datasys2026" # API密钥
+    api_key = "" # API密钥
     model = "aiark/gemma4-e2b" # 模型名稱
 
 [transcribe] # 视频转文本支持多种方案，配置时先填provider，再填对应的配置

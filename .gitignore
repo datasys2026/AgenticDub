@@ -3,6 +3,7 @@ tasks/
 cookies.txt
 .vscode/
 config/config.toml
+krillin-mcp
 bin/
 models/
 uploads/

@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 
 	"krillin-ai/config"
 
@@ -16,6 +15,7 @@ import (
 )
 
 var serverURL string
+var httpClient = &http.Client{}
 
 func init() {
 	config.LoadConfig()
@@ -80,7 +80,7 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 		return nil, TranslateVideoOutput{}, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/api/capability/subtitleTask", "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(serverURL+"/api/capability/subtitleTask", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, TranslateVideoOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -125,7 +125,7 @@ func GetTaskStatus(ctx context.Context, req *mcp.CallToolRequest, input GetTaskS
 		return nil, GetTaskStatusOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(serverURL + "/api/capability/subtitleTask?taskId=" + input.TaskID)
+	resp, err := httpClient.Get(serverURL + "/api/capability/subtitleTask?taskId=" + input.TaskID)
 	if err != nil {
 		return nil, GetTaskStatusOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -188,24 +188,7 @@ type TaskSummary struct {
 }
 
 func ListTasks(ctx context.Context, req *mcp.CallToolRequest, input ListTasksInput) (*mcp.CallToolResult, ListTasksOutput, error) {
-	if input.Limit <= 0 {
-		input.Limit = 20
-	}
-
-	tasks := []TaskSummary{}
-
-	for i := 0; i < input.Limit; i++ {
-		resp, err := http.Get(serverURL + fmt.Sprintf("/api/capability/subtitleTask?taskId=task_%d", i))
-		if err != nil {
-			continue
-		}
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusNotFound {
-			continue
-		}
-	}
-
-	return nil, ListTasksOutput{Tasks: tasks}, nil
+	return nil, ListTasksOutput{Tasks: []TaskSummary{}}, nil
 }
 
 type ApproveHITLInput struct {
@@ -221,7 +204,7 @@ func ApproveHITL(ctx context.Context, req *mcp.CallToolRequest, input ApproveHIT
 		return nil, ApproveHITLOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Post(serverURL+"/api/hitl/approve/"+input.TaskID, "application/json", nil)
+	resp, err := httpClient.Post(serverURL+"/api/hitl/approve/"+input.TaskID, "application/json", nil)
 	if err != nil {
 		return nil, ApproveHITLOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -252,7 +235,7 @@ func RejectHITL(ctx context.Context, req *mcp.CallToolRequest, input RejectHITLI
 	payload := map[string]string{"reason": input.Reason}
 	body, _ := json.Marshal(payload)
 
-	resp, err := http.Post(serverURL+"/api/hitl/reject/"+input.TaskID, "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(serverURL+"/api/hitl/reject/"+input.TaskID, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, RejectHITLOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -279,7 +262,7 @@ func GetReview(ctx context.Context, req *mcp.CallToolRequest, input GetReviewInp
 		return nil, GetReviewOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(serverURL + "/api/hitl/review/" + input.TaskID)
+	resp, err := httpClient.Get(serverURL + "/api/hitl/review/" + input.TaskID)
 	if err != nil {
 		return nil, GetReviewOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -313,7 +296,7 @@ func GetReviewStatus(ctx context.Context, req *mcp.CallToolRequest, input GetRev
 		return nil, GetReviewStatusOutput{}, fmt.Errorf("task_id is required")
 	}
 
-	resp, err := http.Get(serverURL + "/api/hitl/status/" + input.TaskID)
+	resp, err := httpClient.Get(serverURL + "/api/hitl/status/" + input.TaskID)
 	if err != nil {
 		return nil, GetReviewStatusOutput{}, fmt.Errorf("failed to call server: %w", err)
 	}
@@ -344,10 +327,6 @@ func GetReviewStatus(ctx context.Context, req *mcp.CallToolRequest, input GetRev
 		Status:  status,
 		Percent: percent,
 	}, nil
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && strings.Contains(s, substr)
 }
 
 func main() {
