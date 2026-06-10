@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"krillin-ai/config"
+	applog "krillin-ai/log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -18,6 +19,7 @@ var serverURL string
 var httpClient = &http.Client{}
 
 func init() {
+	applog.InitLogger()
 	config.LoadConfig()
 	if config.Conf.Mcp.ServerURL != "" {
 		serverURL = config.Conf.Mcp.ServerURL
@@ -33,7 +35,7 @@ type TranslateVideoInput struct {
 	Bilingual      bool   `json:"bilingual" jsonschema:"include original language subtitles"`
 	TTS            bool   `json:"tts" jsonschema:"generate TTS audio"`
 	Voice          string `json:"voice" jsonschema:"TTS voice name for 0.6B CustomVoice (Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee)"`
-	LLMProfile     string `json:"llm_profile" jsonschema:"LLM profile name from list_model_profiles (fast, quality, external, light)"`
+	LLMProfile     string `json:"llm_profile" jsonschema:"LLM profile name from list_model_profiles (fast, quality, external, light, grok)"`
 	STTProfile     string `json:"stt_profile" jsonschema:"STT profile name from list_model_profiles"`
 	TTSProfile     string `json:"tts_profile" jsonschema:"TTS profile name from list_model_profiles"`
 	EmbedVideoType string `json:"embed_video_type" jsonschema:"subtitle burn type (horizontal, vertical, none)"`
