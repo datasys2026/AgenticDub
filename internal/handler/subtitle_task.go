@@ -35,16 +35,14 @@ func (h Handler) StartSubtitleTask(c *gin.Context) {
 	}
 
 	svc := h.Service
-	if req.LLMProfile != "" || req.STTProfile != "" || req.TTSProfile != "" {
-		taskConfig, err := config.ConfigForModelProfiles(config.Conf, req.LLMProfile, req.STTProfile, req.TTSProfile, req.TtsVoiceCode)
-		if err != nil {
-			response.R(c, response.Response{
-				Error: -1,
-				Msg:   err.Error(),
-				Data:  nil,
-			})
-			return
-		}
+	if taskConfig, ok, err := configForSubtitleTask(req); err != nil {
+		response.R(c, response.Response{
+			Error: -1,
+			Msg:   err.Error(),
+			Data:  nil,
+		})
+		return
+	} else if ok {
 		svc = service.NewServiceWithConfig(taskConfig)
 	}
 
@@ -62,6 +60,17 @@ func (h Handler) StartSubtitleTask(c *gin.Context) {
 		Msg:   "成功",
 		Data:  data,
 	})
+}
+
+func configForSubtitleTask(req dto.StartVideoSubtitleTaskReq) (config.Config, bool, error) {
+	if req.LLMProfile != "" || req.STTProfile != "" || req.TTSProfile != "" {
+		taskConfig, err := config.ConfigForModelProfiles(config.Conf, req.LLMProfile, req.STTProfile, req.TTSProfile, req.TtsVoiceCode)
+		if err != nil {
+			return config.Config{}, false, err
+		}
+		return taskConfig, true, nil
+	}
+	return config.Conf, false, nil
 }
 
 func (h Handler) GetSubtitleTask(c *gin.Context) {
