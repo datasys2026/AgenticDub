@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"krillin-ai/config"
 	"krillin-ai/log"
 	"net/http"
 	"os"
@@ -14,25 +13,28 @@ import (
 )
 
 func (c *Client) Text2Speech(text, voice string, outputFile string) error {
-	baseUrl := config.Conf.Tts.Openai.BaseUrl
+	baseUrl := c.baseURL
 	if baseUrl == "" {
 		baseUrl = "https://api.openai.com/v1"
 	}
 	url := baseUrl + "/audio/speech"
 
-	reqBody := fmt.Sprintf(`{
-		"model": "%s",
-		"input": "%s",
-		"voice":"%s",
-		"response_format": "wav"
-	}`, config.Conf.Tts.Openai.Model, text, voice)
-	req, err := http.NewRequest("POST", url, strings.NewReader(reqBody))
+	reqBody, err := json.Marshal(map[string]string{
+		"model":           c.model,
+		"input":           text,
+		"voice":           voice,
+		"response_format": "wav",
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", url, strings.NewReader(string(reqBody)))
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Conf.Tts.Openai.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -61,7 +63,7 @@ func (c *Client) Text2Speech(text, voice string, outputFile string) error {
 		if err != nil {
 			return err
 		}
-		audioReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.Conf.Tts.Openai.ApiKey))
+		audioReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 
 		audioResp, err := client.Do(audioReq)
 		if err != nil {

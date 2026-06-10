@@ -1,4 +1,8 @@
-# Docker Bereitstellungsanleitung
+# Docker Bereitstellungsanleitung (Legacy / nicht verifiziert)
+
+Docker-Bereitstellung ist derzeit ein legacy Pfad aus dem Upstream-Projekt und wurde noch nicht als offiziell unterstützter Bereitstellungsweg für AgenticDub verifiziert. Die primär unterstützten Wege sind aktuell der lokale Go server, CLI, desktop app und MCP server.
+
+Die folgenden Beispiele bleiben nur als Referenz erhalten. Behandeln Sie den veröffentlichten Image-Namen oder die Compose-Beispiele nicht als aktuelle AgenticDub-Release-Anleitung, bis Docker support neu aufgebaut und verifiziert wurde.
 
 ## Schnellstart
 Bereiten Sie zunächst die Konfigurationsdatei vor und setzen Sie den Server-Listener-Port auf `8888` und die Server-Listener-Adresse auf `0.0.0.0`.
@@ -26,7 +30,7 @@ services:
 ```
 
 ## Modellpersistenz
-Wenn das fasterwhisper-Modell verwendet wird, lädt KrillinAI automatisch die benötigten Dateien in das Verzeichnis `/app/models` und das Verzeichnis `/app/bin`. Diese Dateien gehen verloren, wenn der Container gelöscht wird. Um das Modell zu persistieren, können Sie diese beiden Verzeichnisse auf ein Verzeichnis des Hosts abbilden.
+Wenn das fasterwhisper-Modell verwendet wird, lädt AgenticDub automatisch die benötigten Dateien in das Verzeichnis `/app/models` und das Verzeichnis `/app/bin`. Diese Dateien gehen verloren, wenn der Container gelöscht wird. Um das Modell zu persistieren, können Sie diese beiden Verzeichnisse auf ein Verzeichnis des Hosts abbilden.
 
 ### docker run starten
 ```bash

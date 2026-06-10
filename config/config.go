@@ -85,16 +85,23 @@ type OpenAiWhisper struct {
 }
 
 type Config struct {
-	App        App                    `toml:"app"`
-	Server     Server                 `toml:"server"`
-	Llm        LLMConfig              `toml:"llm"`
-	Transcribe Transcribe             `toml:"transcribe"`
-	Tts        Tts                    `toml:"tts"`
-	Mcp        McpConfig             `toml:"mcp"`
+	App        App                 `toml:"app"`
+	Server     Server              `toml:"server"`
+	Llm        LLMConfig           `toml:"llm"`
+	Transcribe Transcribe          `toml:"transcribe"`
+	Tts        Tts                 `toml:"tts"`
+	Mcp        McpConfig           `toml:"mcp"`
+	XAI        XAIConfig           `toml:"xai_oauth"`
+	Models     ModelRegistryConfig `toml:"models"`
 }
 
 type McpConfig struct {
 	ServerURL string `toml:"server_url"`
+}
+
+type XAIConfig struct {
+	BaseURL   string `toml:"base_url"`
+	TokenPath string `toml:"token_path"`
 }
 
 type LLMConfig struct {
@@ -103,6 +110,21 @@ type LLMConfig struct {
 	BaseURL   string `toml:"base_url"`
 	ApiKey    string `toml:"api_key"`
 	ProxyAddr string `toml:"proxy_addr"`
+}
+
+type ModelProfileConfig struct {
+	Provider  string   `toml:"provider"`
+	BaseURL   string   `toml:"base_url"`
+	ApiKey    string   `toml:"api_key"`
+	ApiKeyEnv string   `toml:"api_key_env"`
+	Model     string   `toml:"model"`
+	Voices    []string `toml:"voices"`
+}
+
+type ModelRegistryConfig struct {
+	LLM map[string]ModelProfileConfig `toml:"llm"`
+	STT map[string]ModelProfileConfig `toml:"stt"`
+	TTS map[string]ModelProfileConfig `toml:"tts"`
 }
 
 var Conf = Config{
@@ -120,8 +142,12 @@ var Conf = Config{
 	},
 	Llm: LLMConfig{
 		Provider: "aiark",
-		Model:   "aiark/gemma4-e2b",
-		BaseURL: "https://aiark.com.tw/v1",
+		Model:    "aiark/gemma4-e2b",
+		BaseURL:  "https://aiark.com.tw/v1",
+	},
+	XAI: XAIConfig{
+		BaseURL:   "https://api.x.ai/v1",
+		TokenPath: "~/.agenticdub/auth/xai.json",
 	},
 	Transcribe: Transcribe{
 		Provider:              "openai",
@@ -145,13 +171,73 @@ var Conf = Config{
 			Model: "gpt-4o-mini-tts",
 		},
 	},
+	Models: ModelRegistryConfig{
+		LLM: map[string]ModelProfileConfig{
+			"fast": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/qwen36-35b",
+			},
+			"quality": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-31b-qat",
+			},
+			"external": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-26b-qat",
+			},
+			"light": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-e4b",
+			},
+			"grok": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "grok-4.3",
+			},
+		},
+		STT: map[string]ModelProfileConfig{
+			"default": {
+				Provider:  "openai",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_STT_API_KEY",
+				Model:     "aiark/faster-whisper-large-v3-fp16",
+			},
+		},
+		TTS: map[string]ModelProfileConfig{
+			"default": {
+				Provider:  "openai",
+				BaseURL:   "https://aiark.com.tw/tts/v1",
+				ApiKeyEnv: "AIARK_TTS_API_KEY",
+				Model:     "aiark/qwen3-tts-0.6b-customvoice",
+				Voices: []string{
+					"Vivian",
+					"Serena",
+					"Uncle_Fu",
+					"Dylan",
+					"Eric",
+					"Ryan",
+					"Aiden",
+					"Ono_Anna",
+					"Sohee",
+				},
+			},
+		},
+	},
 }
 
 // 检查必要的配置是否完整
 func validateConfig() error {
 	// 检查LLM服务提供商
 	switch Conf.Llm.Provider {
-	case "openai", "aiark", "ollama":
+	case "openai", "aiark", "ollama", "xai-oauth":
 	default:
 		return fmt.Errorf("不支持的LLM提供商: %s（可选：openai, aiark, ollama）", Conf.Llm.Provider)
 	}
@@ -175,12 +261,8 @@ func validateConfig() error {
 			return errors.New("检测到开启了whisperkit，但模型选型配置不正确，请检查配置")
 		}
 	case "whispercpp":
-		if runtime.GOOS != "windows" { // 当前先仅支持win，模型仅支持large-v2，最小化产品
-			log.GetLogger().Error("whispercpp only support windows", zap.String("current os", runtime.GOOS))
-			return fmt.Errorf("whispercpp only support windows")
-		}
-		if Conf.Transcribe.Whispercpp.Model != "large-v2" {
-			return errors.New("检测到开启了whisper.cpp，但模型选型配置不正确，请检查配置")
+		if runtime.GOOS != "windows" {
+			log.GetLogger().Info("whispercpp on macOS, using brew whisper-cli", zap.String("current os", runtime.GOOS))
 		}
 	case "aliyun":
 		if Conf.Transcribe.Aliyun.Speech.AccessKeyId == "" || Conf.Transcribe.Aliyun.Speech.AccessKeySecret == "" || Conf.Transcribe.Aliyun.Speech.AppKey == "" {

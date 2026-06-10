@@ -440,38 +440,37 @@ func checkWhispercpp() error {
 	)
 	if runtime.GOOS == "windows" {
 		filePath = filepath.Join("bin", "whispercpp", "whisper-cli.exe")
-	} else {
-		return fmt.Errorf("whisper.cpp不支持你当前的操作系统: %s，请选择其它transcription provider", runtime.GOOS)
-	}
-	if _, err = os.Stat(filePath); os.IsNotExist(err) {
-		log.GetLogger().Info("没有找到whispercpp，即将开始自动下载，文件较大请耐心等待")
-		err = os.MkdirAll("bin", 0755)
-		if err != nil {
-			log.GetLogger().Error("创建./bin目录失败", zap.Error(err))
-			return err
+		if _, err = os.Stat(filePath); os.IsNotExist(err) {
+			log.GetLogger().Info("没有找到whispercpp，即将开始自动下载，文件较大请耐心等待")
+			err = os.MkdirAll("bin", 0755)
+			if err != nil {
+				log.GetLogger().Error("创建./bin目录失败", zap.Error(err))
+				return err
+			}
+			downloadUrl := "https://modelscope.cn/models/Maranello/KrillinAI_dependency_cn/resolve/master/whispercpp-windows-cuda.zip"
+			zipFilePath := filepath.Join("bin", "whispercpp-windows-cuda.zip")
+			err = util.DownloadFile(downloadUrl, zipFilePath, config.Conf.App.Proxy)
+			if err != nil {
+				log.GetLogger().Error("下载whispercpp失败", zap.Error(err))
+				return err
+			}
+			log.GetLogger().Info("开始解压whispercpp")
+			err = util.Unzip(zipFilePath, filepath.Join("bin", "whispercpp")+string(filepath.Separator))
+			if err != nil {
+				log.GetLogger().Error("解压whispercpp失败", zap.Error(err))
+				return err
+			}
 		}
-		var downloadUrl string
-		if runtime.GOOS == "windows" {
-			downloadUrl = "https://modelscope.cn/models/Maranello/KrillinAI_dependency_cn/resolve/master/whispercpp-windows-cuda.zip"
-		}
-		zipFilePath := filepath.Join("bin", "whispercpp-windows-cuda.zip")
-		err = util.DownloadFile(downloadUrl, zipFilePath, config.Conf.App.Proxy)
-		if err != nil {
-			log.GetLogger().Error("下载whispercpp失败", zap.Error(err))
-			return err
-		}
-		log.GetLogger().Info("开始解压whispercpp")
-		err = util.Unzip(zipFilePath, filepath.Join("bin", "whispercpp")+string(filepath.Separator))
-		if err != nil {
-			log.GetLogger().Error("解压whispercpp失败", zap.Error(err))
-			return err
-		}
-	}
-	if runtime.GOOS != "windows" {
 		err = os.Chmod(filePath, 0755)
 		if err != nil {
 			log.GetLogger().Error("设置文件权限失败", zap.Error(err))
 			return err
+		}
+	} else {
+		filePath = "whisper-cli"
+		if _, err = exec.LookPath(filePath); err != nil {
+			log.GetLogger().Error("没有找到whisper-cli，请先安装: brew install whisper-cpp", zap.Error(err))
+			return fmt.Errorf("whisper-cli not found, install with: brew install whisper-cpp")
 		}
 	}
 	storage.WhispercppPath = filePath

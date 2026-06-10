@@ -7,11 +7,11 @@ import (
 	"krillin-ai/log"
 	"krillin-ai/pkg/aliyun"
 	"krillin-ai/pkg/fasterwhisper"
+	"krillin-ai/pkg/localtts"
 	"krillin-ai/pkg/openai"
 	"krillin-ai/pkg/whisper"
 	"krillin-ai/pkg/whispercpp"
 	"krillin-ai/pkg/whisperkit"
-	"krillin-ai/pkg/localtts"
 
 	"go.uber.org/zap"
 )
@@ -25,47 +25,58 @@ type Service struct {
 }
 
 func NewService() *Service {
+	return NewServiceWithConfig(config.Conf)
+}
+
+func NewServiceWithConfig(conf config.Config) *Service {
 	var transcriber types.Transcriber
 	var chatCompleter types.ChatCompleter
 	var ttsClient types.Ttser
 
-	switch config.Conf.Transcribe.Provider {
+	switch conf.Transcribe.Provider {
 	case "openai":
-		transcriber = whisper.NewClient(config.Conf.Transcribe.Openai.BaseUrl, config.Conf.Transcribe.Openai.ApiKey, config.Conf.Transcribe.Openai.Model, config.Conf.App.Proxy)
+		transcriber = whisper.NewClient(conf.Transcribe.Openai.BaseUrl, conf.Transcribe.Openai.ApiKey, conf.Transcribe.Openai.Model, conf.App.Proxy)
 	case "fasterwhisper":
-		transcriber = fasterwhisper.NewFastwhisperProcessor(config.Conf.Transcribe.Fasterwhisper.Model)
+		transcriber = fasterwhisper.NewFastwhisperProcessor(conf.Transcribe.Fasterwhisper.Model)
 	case "whispercpp":
-		transcriber = whispercpp.NewWhispercppProcessor(config.Conf.Transcribe.Whispercpp.Model)
+		transcriber = whispercpp.NewWhispercppProcessor(conf.Transcribe.Whispercpp.Model)
 	case "whisperkit":
-		transcriber = whisperkit.NewWhisperKitProcessor(config.Conf.Transcribe.Whisperkit.Model)
+		transcriber = whisperkit.NewWhisperKitProcessor(conf.Transcribe.Whisperkit.Model)
 	case "aliyun":
-		cc, err := aliyun.NewAsrClient(config.Conf.Transcribe.Aliyun.Speech.AccessKeyId, config.Conf.Transcribe.Aliyun.Speech.AccessKeySecret, config.Conf.Transcribe.Aliyun.Speech.AppKey, true)
+		cc, err := aliyun.NewAsrClient(conf.Transcribe.Aliyun.Speech.AccessKeyId, conf.Transcribe.Aliyun.Speech.AccessKeySecret, conf.Transcribe.Aliyun.Speech.AppKey, true)
 		if err != nil {
 			log.GetLogger().Error("创建阿里云语音识别客户端失败： ", zap.Error(err))
 			return nil
 		}
 		transcriber = cc
 	}
-	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", config.Conf.Transcribe.Provider))
+	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", conf.Transcribe.Provider))
 
-	switch config.Conf.Llm.Provider {
+	switch conf.Llm.Provider {
 	case "openai":
-		provider := llm.NewOpenAIProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model, config.Conf.Llm.ProxyAddr)
+		provider := llm.NewOpenAIProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model, conf.Llm.ProxyAddr)
 		chatCompleter = llm.NewChatCompleterAdapter(provider)
 	case "aiark":
-		provider := llm.NewAiarkLLMProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model)
+		provider := llm.NewAiarkLLMProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	case "xai-oauth":
+		baseURL := conf.Llm.BaseURL
+		if baseURL == "" {
+			baseURL = conf.XAI.BaseURL
+		}
+		provider := llm.NewXAIOAuthProviderFromTokenFile(baseURL, conf.Llm.Model, conf.XAI.TokenPath)
 		chatCompleter = llm.NewChatCompleterAdapter(provider)
 	default:
-		provider := llm.NewOpenAIProvider(config.Conf.Llm.BaseURL, config.Conf.Llm.ApiKey, config.Conf.Llm.Model, config.Conf.Llm.ProxyAddr)
+		provider := llm.NewOpenAIProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model, conf.Llm.ProxyAddr)
 		chatCompleter = llm.NewChatCompleterAdapter(provider)
 	}
-	log.GetLogger().Info("当前选择的LLM： ", zap.String("llm", config.Conf.Llm.Provider))
+	log.GetLogger().Info("当前选择的LLM： ", zap.String("llm", conf.Llm.Provider))
 
-	switch config.Conf.Tts.Provider {
+	switch conf.Tts.Provider {
 	case "openai":
-		ttsClient = openai.NewClient(config.Conf.Tts.Openai.BaseUrl, config.Conf.Tts.Openai.ApiKey, config.Conf.App.Proxy)
+		ttsClient = openai.NewClient(conf.Tts.Openai.BaseUrl, conf.Tts.Openai.ApiKey, conf.Tts.Openai.Model, conf.App.Proxy)
 	case "aliyun":
-		ttsClient = aliyun.NewTtsClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey)
+		ttsClient = aliyun.NewTtsClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey)
 	case "edge-tts":
 		ttsClient = localtts.NewEdgeTtsClient()
 	}
@@ -74,7 +85,7 @@ func NewService() *Service {
 		Transcriber:      transcriber,
 		ChatCompleter:    chatCompleter,
 		TtsClient:        ttsClient,
-		OssClient:        aliyun.NewOssClient(config.Conf.Transcribe.Aliyun.Oss.AccessKeyId, config.Conf.Transcribe.Aliyun.Oss.AccessKeySecret, config.Conf.Transcribe.Aliyun.Oss.Bucket),
-		VoiceCloneClient: aliyun.NewVoiceCloneClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey),
+		OssClient:        aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
+		VoiceCloneClient: aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
 	}
 }

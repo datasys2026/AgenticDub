@@ -1,23 +1,23 @@
 <div align="center">
-  <img src="/docs/images/logo.jpg" alt="KrillinAI" height="90">
+  <img src="/docs/images/logo.jpg" alt="AgenticDub" height="90">
 
 # Minimalistisches KI-Videoübersetzungs- und Synchronisationstool
 
-<a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="KrillinAI%2FKrillinAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+<a href="https://trendshift.io/repositories/13360" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13360" alt="AgenticDub%2FAgenticDub | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
 **[English](/README.md)｜[简体中文](/docs/zh/README.md)｜[日本語](/docs/jp/README.md)｜[한국어](/docs/kr/README.md)｜[Tiếng Việt](/docs/vi/README.md)｜[Français](/docs/fr/README.md)｜[Deutsch](/docs/de/README.md)｜[Español](/docs/es/README.md)｜[Português](/docs/pt/README.md)｜[Русский](/docs/rus/README.md)｜[اللغة العربية](/docs/ar/README.md)**
 
-[![Twitter](https://img.shields.io/badge/Twitter-KrillinAI-orange?logo=twitter)](https://x.com/KrillinAI)
+[![Twitter](https://img.shields.io/badge/Twitter-AgenticDub-orange?logo=twitter)](https://x.com/AgenticDub)
 [![QQ 群](https://img.shields.io/badge/QQ%20群-754069680-green?logo=tencent-qq)](https://jq.qq.com/?_wv=1027&k=754069680)
 [![Bilibili](https://img.shields.io/badge/dynamic/json?label=Bilibili&query=%24.data.follower&suffix=粉丝&url=https%3A%2F%2Fapi.bilibili.com%2Fx%2Frelation%2Fstat%3Fvmid%3D242124650&logo=bilibili&color=00A1D6&labelColor=FE7398&logoColor=FFFFFF)](https://space.bilibili.com/242124650)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/krillinai/KrillinAI)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/krillinai/AgenticDub)
 
 </div>
 
 ## Projektvorstellung  ([Probieren Sie jetzt die Online-Version aus!](https://www.klic.studio/))
 [**Schnellstart**](#-quick-start)
 
-KrillinAI ist eine vielseitige Lösung zur Lokalisierung und Verbesserung von Audio und Video, die von Krillin AI entwickelt wurde. Dieses minimalistische, aber leistungsstarke Tool integriert Videoübersetzung, Synchronisation und Sprachklonierung und unterstützt sowohl Quer- als auch Hochformat, um eine perfekte Präsentation auf allen wichtigen Plattformen (Bilibili, Xiaohongshu, Douyin, WeChat Video, Kuaishou, YouTube, TikTok usw.) zu gewährleisten. Mit einem End-to-End-Workflow können Sie Rohmaterialien mit nur wenigen Klicks in wunderschön bereitgestellte plattformübergreifende Inhalte verwandeln.
+AgenticDub ist eine vielseitige Lösung zur Lokalisierung und Verbesserung von Audio und Video, die von AgenticDub entwickelt wurde. Dieses minimalistische, aber leistungsstarke Tool integriert Videoübersetzung, Synchronisation und Sprachklonierung und unterstützt sowohl Quer- als auch Hochformat, um eine perfekte Präsentation auf allen wichtigen Plattformen (Bilibili, Xiaohongshu, Douyin, WeChat Video, Kuaishou, YouTube, TikTok usw.) zu gewährleisten. Mit einem End-to-End-Workflow können Sie Rohmaterialien mit nur wenigen Klicks in wunderschön bereitgestellte plattformübergreifende Inhalte verwandeln.
 
 ## Hauptmerkmale und Funktionen:
 
@@ -119,11 +119,11 @@ Unterstützte Übersetzungssprachen: Englisch, Chinesisch, Russisch, Spanisch, F
 
 ## 🚀 Schnellstart
 
-Sie können Fragen auf dem [Deepwiki von KrillinAI](https://deepwiki.com/krillinai/KrillinAI) stellen. Es indiziert die Dateien im Repository, sodass Sie schnell Antworten finden können.
+Sie können Fragen auf dem [Deepwiki von AgenticDub](https://deepwiki.com/krillinai/AgenticDub) stellen. Es indiziert die Dateien im Repository, sodass Sie schnell Antworten finden können.
 
 ### Grundlegende Schritte
 
-Laden Sie zunächst die ausführbare Datei herunter, die mit Ihrem Gerätesystem von der [Release](https://github.com/KrillinAI/KrillinAI/releases) übereinstimmt, und folgen Sie dann dem Tutorial unten, um zwischen der Desktop-Version oder der Nicht-Desktop-Version zu wählen. Platzieren Sie den Software-Download in einem leeren Ordner, da beim Ausführen einige Verzeichnisse generiert werden, und das Halten in einem leeren Ordner erleichtert die Verwaltung.
+Laden Sie zunächst die ausführbare Datei herunter, die mit Ihrem Gerätesystem von der [Release](https://github.com/AgenticDub/AgenticDub/releases) übereinstimmt, und folgen Sie dann dem Tutorial unten, um zwischen der Desktop-Version oder der Nicht-Desktop-Version zu wählen. Platzieren Sie den Software-Download in einem leeren Ordner, da beim Ausführen einige Verzeichnisse generiert werden, und das Halten in einem leeren Ordner erleichtert die Verwaltung.
 
 【Wenn es sich um die Desktop-Version handelt, d.h. die Release-Datei mit "desktop", siehe hier】
 _Die Desktop-Version wurde neu veröffentlicht, um die Probleme neuer Benutzer zu beheben, die Schwierigkeiten haben, Konfigurationsdateien korrekt zu bearbeiten, und es gibt einige Fehler, die kontinuierlich aktualisiert werden._
@@ -142,31 +142,31 @@ _Die Nicht-Desktop-Version ist die ursprüngliche Version, die eine komplexere K
 【Wenn es sich um die Desktop-Version handelt, d.h. die Release-Datei mit "desktop", siehe hier】
 Aufgrund von Signierungsproblemen kann die Desktop-Version derzeit nicht durch Doppelklick ausgeführt oder über dmg installiert werden; Sie müssen die Anwendung manuell vertrauen. Die Methode ist wie folgt:
 
-1. Öffnen Sie das Terminal im Verzeichnis, in dem sich die ausführbare Datei (angenommen, der Dateiname ist KrillinAI_1.0.0_desktop_macOS_arm64) befindet
+1. Öffnen Sie das Terminal im Verzeichnis, in dem sich die ausführbare Datei (angenommen, der Dateiname ist AgenticDub_1.0.0_desktop_macOS_arm64) befindet
 2. Führen Sie die folgenden Befehle der Reihe nach aus:
 
 ```
-sudo xattr -cr ./KrillinAI_1.0.0_desktop_macOS_arm64
-sudo chmod +x ./KrillinAI_1.0.0_desktop_macOS_arm64 
-./KrillinAI_1.0.0_desktop_macOS_arm64
+sudo xattr -cr ./AgenticDub_1.0.0_desktop_macOS_arm64
+sudo chmod +x ./AgenticDub_1.0.0_desktop_macOS_arm64
+./AgenticDub_1.0.0_desktop_macOS_arm64
 ```
 
 【Wenn es sich um die Nicht-Desktop-Version handelt, d.h. die Release-Datei ohne "desktop", siehe hier】
 Diese Software ist nicht signiert, daher müssen Sie beim Ausführen auf macOS nach Abschluss der Datei-Konfiguration in den "Grundlegenden Schritten" auch der Anwendung manuell vertrauen. Die Methode ist wie folgt:
 
-1. Öffnen Sie das Terminal im Verzeichnis, in dem sich die ausführbare Datei (angenommen, der Dateiname ist KrillinAI_1.0.0_macOS_arm64) befindet
+1. Öffnen Sie das Terminal im Verzeichnis, in dem sich die ausführbare Datei (angenommen, der Dateiname ist AgenticDub_1.0.0_macOS_arm64) befindet
 2. Führen Sie die folgenden Befehle der Reihe nach aus:
    ```
-   sudo xattr -rd com.apple.quarantine ./KrillinAI_1.0.0_macOS_arm64
-   sudo chmod +x ./KrillinAI_1.0.0_macOS_arm64
-   ./KrillinAI_1.0.0_macOS_arm64
+   sudo xattr -rd com.apple.quarantine ./AgenticDub_1.0.0_macOS_arm64
+   sudo chmod +x ./AgenticDub_1.0.0_macOS_arm64
+   ./AgenticDub_1.0.0_macOS_arm64
    ```
-   
+
    Dies wird den Dienst starten
 
 ### Docker-Bereitstellung
 
-Dieses Projekt unterstützt die Docker-Bereitstellung; bitte beziehen Sie sich auf die [Docker-Bereitstellungsanweisungen](./docker.md)
+Docker-Bereitstellung ist derzeit ein legacy / nicht verifizierter Pfad und bleibt nur als Referenz erhalten; bitte beziehen Sie sich auf die [Docker-Bereitstellungsanweisungen](./docker.md)
 
 Basierend auf der bereitgestellten Konfigurationsdatei finden Sie hier den aktualisierten Abschnitt "Konfigurationshilfe (Unbedingt lesen)" für Ihre README-Datei:
 
@@ -215,4 +215,4 @@ Bitte besuchen Sie die [Häufig gestellten Fragen](./faq.md)
 
 ## Star-Historie
 
-[![Star-Historien-Diagramm](https://api.star-history.com/svg?repos=KrillinAI/KrillinAI&type=Date)](https://star-history.com/#KrillinAI/KrillinAI&Date)
+[![Star-Historien-Diagramm](https://api.star-history.com/svg?repos=AgenticDub/AgenticDub&type=Date)](https://star-history.com/#AgenticDub/AgenticDub&Date)

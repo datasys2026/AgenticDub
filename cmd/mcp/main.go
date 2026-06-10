@@ -32,7 +32,10 @@ type TranslateVideoInput struct {
 	TargetLang     string `json:"target_lang" jsonschema:"target language (繁體中文 or 簡體中文)"`
 	Bilingual      bool   `json:"bilingual" jsonschema:"include original language subtitles"`
 	TTS            bool   `json:"tts" jsonschema:"generate TTS audio"`
-	Voice          string `json:"voice" jsonschema:"TTS voice name (e.g., Ryan)"`
+	Voice          string `json:"voice" jsonschema:"TTS voice name for 0.6B CustomVoice (Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee)"`
+	LLMProfile     string `json:"llm_profile" jsonschema:"LLM profile name from list_model_profiles (fast, quality, external, light)"`
+	STTProfile     string `json:"stt_profile" jsonschema:"STT profile name from list_model_profiles"`
+	TTSProfile     string `json:"tts_profile" jsonschema:"TTS profile name from list_model_profiles"`
 	EmbedVideoType string `json:"embed_video_type" jsonschema:"subtitle burn type (horizontal, vertical, none)"`
 }
 
@@ -50,8 +53,21 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	if input.Voice == "" {
 		input.Voice = "Ryan"
 	}
+	if input.LLMProfile == "" {
+		input.LLMProfile = "external"
+	}
+	if input.STTProfile == "" {
+		input.STTProfile = "default"
+	}
+	if input.TTSProfile == "" {
+		input.TTSProfile = "default"
+	}
 	if input.EmbedVideoType == "" {
 		input.EmbedVideoType = "none"
+	}
+
+	if _, err := config.ConfigForModelProfiles(config.Conf, input.LLMProfile, input.STTProfile, input.TTSProfile, input.Voice); err != nil {
+		return nil, TranslateVideoOutput{}, err
 	}
 
 	bilingual := 0
@@ -64,14 +80,17 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 
 	payload := map[string]any{
-		"url":                        input.URL,
-		"origin_lang":                input.OriginLang,
-		"target_lang":                input.TargetLang,
-		"bilingual":                  bilingual,
-		"translation_subtitle_pos":    0,
-		"modal_filter":               0,
-		"tts":                        tts,
+		"url":                       input.URL,
+		"origin_lang":               input.OriginLang,
+		"target_lang":               input.TargetLang,
+		"bilingual":                 bilingual,
+		"translation_subtitle_pos":  0,
+		"modal_filter":              0,
+		"tts":                       tts,
 		"tts_voice_code":            input.Voice,
+		"llm_profile":               input.LLMProfile,
+		"stt_profile":               input.STTProfile,
+		"tts_profile":               input.TTSProfile,
 		"embed_subtitle_video_type": input.EmbedVideoType,
 	}
 
@@ -107,6 +126,42 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 
 	return nil, TranslateVideoOutput{TaskID: taskID}, nil
+}
+
+type ListModelProfilesInput struct{}
+
+type PublicModelProfile struct {
+	Provider string   `json:"provider"`
+	BaseURL  string   `json:"base_url"`
+	Model    string   `json:"model"`
+	Voices   []string `json:"voices,omitempty"`
+}
+
+type ListModelProfilesOutput struct {
+	LLM map[string]PublicModelProfile `json:"llm"`
+	STT map[string]PublicModelProfile `json:"stt"`
+	TTS map[string]PublicModelProfile `json:"tts"`
+}
+
+func ListModelProfiles(ctx context.Context, req *mcp.CallToolRequest, input ListModelProfilesInput) (*mcp.CallToolResult, ListModelProfilesOutput, error) {
+	return nil, ListModelProfilesOutput{
+		LLM: publicModelProfiles(config.Conf.Models.LLM),
+		STT: publicModelProfiles(config.Conf.Models.STT),
+		TTS: publicModelProfiles(config.Conf.Models.TTS),
+	}, nil
+}
+
+func publicModelProfiles(profiles map[string]config.ModelProfileConfig) map[string]PublicModelProfile {
+	result := make(map[string]PublicModelProfile, len(profiles))
+	for name, profile := range profiles {
+		result[name] = PublicModelProfile{
+			Provider: profile.Provider,
+			BaseURL:  profile.BaseURL,
+			Model:    profile.Model,
+			Voices:   profile.Voices,
+		}
+	}
+	return result
 }
 
 type GetTaskStatusInput struct {
@@ -330,11 +385,11 @@ func GetReviewStatus(ctx context.Context, req *mcp.CallToolRequest, input GetRev
 }
 
 func main() {
-	log.Println("Starting KrillinAI MCP Server...")
+	log.Println("Starting AgenticDub MCP Server...")
 	log.Printf("Server URL: %s", serverURL)
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "krillin-ai",
+		Name:    "agenticdub",
 		Version: "1.0.0",
 	}, nil)
 
@@ -342,6 +397,11 @@ func main() {
 		Name:        "translate_video",
 		Description: "Start a video translation task. Translates video to target language with optional TTS and subtitle burning.",
 	}, TranslateVideo)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_model_profiles",
+		Description: "List allowed LLM, STT, and TTS model profiles and TTS voices.",
+	}, ListModelProfiles)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_task_status",

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -16,20 +17,24 @@ import (
 
 	"github.com/spf13/cobra"
 
+	xaiauth "krillin-ai/internal/auth/xai"
 	"krillin-ai/internal/providers/llm"
 	"krillin-ai/internal/translator"
 )
 
 var (
-	targetLang  string
-	outputDir   string
-	model       string
-	strategy    string
-	verbose     bool
-	apiKey      string
-	voice       string
-	language    string
-	ttsModel    string
+	targetLang    string
+	outputDir     string
+	model         string
+	strategy      string
+	verbose       bool
+	apiKey        string
+	voice         string
+	language      string
+	ttsModel      string
+	xaiTokenPath  string
+	xaiBaseURL    string
+	xaiProbeModel string
 )
 
 const (
@@ -39,9 +44,9 @@ const (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "krilin-ai",
+	Use:   "agenticdub",
 	Short: "AI 影片翻譯配音工具",
-	Long:  `KrillinAI - 影片翻譯配音工具`,
+	Long:  `AgenticDub - 影片翻譯配音工具`,
 }
 
 var runCmd = &cobra.Command{
@@ -49,7 +54,7 @@ var runCmd = &cobra.Command{
 	Short: "執行完整翻譯流程",
 	Long:  `執行影片翻譯配音流程。`,
 	Args:  cobra.ExactArgs(1),
-	Run:  runVideo,
+	Run:   runVideo,
 }
 
 func runVideo(cmd *cobra.Command, args []string) {
@@ -128,10 +133,10 @@ func runVideo(cmd *cobra.Command, args []string) {
 }
 
 type STTResult struct {
-	Text        string  `json:"text"`
-	Language    string  `json:"language"`
-	Duration    float64 `json:"duration"`
-	Segments    []struct {
+	Text     string  `json:"text"`
+	Language string  `json:"language"`
+	Duration float64 `json:"duration"`
+	Segments []struct {
 		Start float64 `json:"start"`
 		End   float64 `json:"end"`
 		Text  string  `json:"text"`
@@ -270,13 +275,13 @@ func transcribeToSegments(audioFile string) ([]translator.Segment, error) {
 }
 
 type AiarkLLM struct {
-	model string
+	model  string
 	apiKey string
 }
 
 func (l *AiarkLLM) ChatCompletion(ctx context.Context, messages []llm.Message) (*llm.ChatCompletionResponse, error) {
 	payload := map[string]interface{}{
-		"model": l.model,
+		"model":    l.model,
 		"messages": messages,
 	}
 
@@ -351,7 +356,7 @@ func translateAll(transcript *translator.Transcript) ([]translator.Segment, erro
 }
 
 type AiarkTTS struct {
-	apiKey      string
+	apiKey       string
 	outputDirAbs string
 }
 
@@ -646,17 +651,123 @@ var configCmd = &cobra.Command{
 				apiKey = "datasys2026"
 			}
 		}
-		fmt.Println("=== KrillinAI 設定 ===")
+		fmt.Println("=== AgenticDub 設定 ===")
 		fmt.Printf("目標語言: %s\n", targetLang)
 		fmt.Printf("輸出目錄: %s\n", outputDir)
 		fmt.Printf("翻譯策略: %s\n", strategy)
 		fmt.Printf("LLM 模型: %s\n", model)
 		fmt.Printf("API Key: %s\n", apiKey)
-		fmt.Printf("\n端點:")
+		fmt.Printf("\n端點:\n")
 		fmt.Printf("  STT: %s\n", STTEndpoint)
 		fmt.Printf("  LLM: %s\n", LLMEndpoint)
 		fmt.Printf("  TTS: %s\n", TTSEndpoint)
 	},
+}
+
+var authCmd = &cobra.Command{
+	Use:   "auth",
+	Short: "管理第三方登入狀態",
+}
+
+var xaiAuthCmd = &cobra.Command{
+	Use:   "xai",
+	Short: "管理 xAI / Grok OAuth 狀態",
+}
+
+var xaiAuthStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "檢查 xAI / Grok OAuth token",
+	Run:   runXAIAuthStatus,
+}
+
+var xaiAuthProbeCmd = &cobra.Command{
+	Use:   "probe",
+	Short: "使用 xAI / Grok OAuth token 呼叫 /v1/responses",
+	Run:   runXAIAuthProbe,
+}
+
+func resolveXAITokenPath(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if envValue := os.Getenv("XAI_OAUTH_TOKEN_PATH"); envValue != "" {
+		return envValue
+	}
+	return xaiauth.DefaultTokenPath()
+}
+
+type xaiProbeOptions struct {
+	TokenPath string
+	BaseURL   string
+	Model     string
+	Client    llm.HTTPDoer
+	Stdout    io.Writer
+}
+
+func runXAIProbe(ctx context.Context, opts xaiProbeOptions) error {
+	if opts.TokenPath == "" {
+		opts.TokenPath = xaiauth.DefaultTokenPath()
+	}
+	if opts.BaseURL == "" {
+		opts.BaseURL = "https://api.x.ai/v1"
+	}
+	if opts.Model == "" {
+		opts.Model = "grok-4.3"
+	}
+	if opts.Stdout == nil {
+		opts.Stdout = os.Stdout
+	}
+
+	store := xaiauth.NewFileTokenStore(opts.TokenPath)
+	provider := llm.NewXAIOAuthProvider(opts.BaseURL, opts.Model, xaiauth.NewFileTokenSource(store), opts.Client)
+	resp, err := provider.ChatCompletion(ctx, []llm.Message{
+		{Role: "user", Content: "Reply with exactly: agenticdub-probe-ok"},
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(opts.Stdout, "xAI OAuth probe: ok\n")
+	fmt.Fprintf(opts.Stdout, "Model: %s\n", opts.Model)
+	fmt.Fprintf(opts.Stdout, "Response: %s\n", strings.TrimSpace(resp.Content))
+	return nil
+}
+
+func runXAIAuthProbe(cmd *cobra.Command, args []string) {
+	path := resolveXAITokenPath(xaiTokenPath)
+	if err := runXAIProbe(cmd.Context(), xaiProbeOptions{
+		TokenPath: path,
+		BaseURL:   xaiBaseURL,
+		Model:     xaiProbeModel,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "xAI OAuth probe failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runXAIAuthStatus(cmd *cobra.Command, args []string) {
+	path := resolveXAITokenPath(xaiTokenPath)
+	store := xaiauth.NewFileTokenStore(path)
+	token, err := store.Load()
+	if err != nil {
+		if errors.Is(err, xaiauth.ErrTokenNotFound) {
+			fmt.Fprintf(os.Stderr, "xAI OAuth token not found: %s\n", path)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "xAI OAuth token check failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, err := xaiauth.NewFileTokenSource(store).BearerToken(cmd.Context()); err != nil {
+		fmt.Fprintf(os.Stderr, "xAI OAuth token invalid: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("xAI OAuth token: ok\n")
+	fmt.Printf("Token path: %s\n", path)
+	if !token.ExpiresAt.IsZero() {
+		fmt.Printf("Expires at: %s\n", token.ExpiresAt.Format(time.RFC3339))
+	}
 }
 
 func init() {
@@ -665,6 +776,10 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(authCmd)
+	authCmd.AddCommand(xaiAuthCmd)
+	xaiAuthCmd.AddCommand(xaiAuthStatusCmd)
+	xaiAuthCmd.AddCommand(xaiAuthProbeCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "詳細輸出")
 	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API Key (或 LITELLM_API_KEY)")
@@ -675,6 +790,10 @@ func init() {
 	runCmd.Flags().StringVar(&voice, "voice", "Alex", "TTS 語音")
 	runCmd.Flags().StringVar(&language, "lang", "Chinese", "TTS 語言")
 	runCmd.Flags().StringVar(&ttsModel, "tts-model", "Qwen3-TTS-0.6B", "TTS 模型")
+	xaiAuthStatusCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiBaseURL, "base-url", "https://api.x.ai/v1", "xAI API base URL")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiProbeModel, "model", "grok-4.3", "xAI model to probe")
 }
 
 func main() {

@@ -1,10 +1,11 @@
 package handler
 
 import (
+	"krillin-ai/config"
+	"krillin-ai/internal/deps"
 	"krillin-ai/internal/dto"
 	"krillin-ai/internal/response"
 	"krillin-ai/internal/service"
-	"krillin-ai/internal/deps"
 	"krillin-ai/log"
 	"os"
 	"path/filepath"
@@ -34,6 +35,18 @@ func (h Handler) StartSubtitleTask(c *gin.Context) {
 	}
 
 	svc := h.Service
+	if req.LLMProfile != "" || req.STTProfile != "" || req.TTSProfile != "" {
+		taskConfig, err := config.ConfigForModelProfiles(config.Conf, req.LLMProfile, req.STTProfile, req.TTSProfile, req.TtsVoiceCode)
+		if err != nil {
+			response.R(c, response.Response{
+				Error: -1,
+				Msg:   err.Error(),
+				Data:  nil,
+			})
+			return
+		}
+		svc = service.NewServiceWithConfig(taskConfig)
+	}
 
 	data, err := svc.StartSubtitleTask(req)
 	if err != nil {

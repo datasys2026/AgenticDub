@@ -3,6 +3,7 @@ package desktop
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/color"
 	"io"
@@ -231,7 +232,7 @@ func (sm *SubtitleManager) uploadMultipleFiles() {
 		}
 
 		if result.Error != 0 && result.Error != 200 {
-			dialog.ShowError(fmt.Errorf(result.Msg), sm.window)
+			dialog.ShowError(errors.New(result.Msg), sm.window)
 			return
 		}
 
@@ -332,7 +333,7 @@ func (sm *SubtitleManager) uploadVideo(localPath string) error {
 	}
 
 	if result.Error != 0 && result.Error != 200 {
-		return fmt.Errorf(result.Msg)
+		return errors.New(result.Msg)
 	}
 
 	sm.videoUrl = result.Data.FilePath
@@ -379,7 +380,7 @@ func (sm *SubtitleManager) uploadAudio() error {
 	}
 
 	if result.Error != 0 && result.Error != 200 {
-		return fmt.Errorf(result.Msg)
+		return errors.New(result.Msg)
 	}
 
 	sm.uploadedAudioURL = result.Data.FilePath
@@ -517,7 +518,7 @@ func (sm *SubtitleManager) StartTask() error {
 	}
 
 	if result.Error != 0 && result.Error != 200 {
-		return fmt.Errorf(result.Msg)
+		return errors.New(result.Msg)
 	}
 
 	// 开始轮询任务状态

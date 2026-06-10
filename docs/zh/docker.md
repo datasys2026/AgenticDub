@@ -1,4 +1,8 @@
-# Docker 部署指南
+# Docker 部署指南（Legacy / 未驗證）
+
+Docker 部署目前是從上游專案繼承而來的 legacy 路徑，尚未作為 AgenticDub 的正式支援部署方式驗證。目前主要支援路徑是本機 Go server、CLI、desktop app 與 MCP server。
+
+以下範例僅保留作為參考；在 Docker support 重新整理並驗證前，不應視為目前 AgenticDub 的正式發佈指令。
 
 ## 快速开始
 先准备好配置文件，设置服务器监听端口为`8888`、服务器监听地址为`0.0.0.0`
@@ -26,7 +30,7 @@ services:
 ```
 
 ## 持久化模型
-如果使用fasterwhisper模型， KrillinAI 会自动下载模型所需文件到`/app/models`目录和`/app/bin`目录。容器删除后，这些文件会丢失。如果需要持久化模型，可以将这两个目录映射到宿主机的目录。
+如果使用fasterwhisper模型， AgenticDub 会自动下载模型所需文件到`/app/models`目录和`/app/bin`目录。容器删除后，这些文件会丢失。如果需要持久化模型，可以将这两个目录映射到宿主机的目录。
 
 ### docker run启动
 ```bash

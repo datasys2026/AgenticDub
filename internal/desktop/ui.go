@@ -11,6 +11,7 @@ import (
 	"krillin-ai/static"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -1129,7 +1130,7 @@ func createStartButton(window fyne.Window, sm *SubtitleManager, videoInputContai
 		}
 		btn.Hide()
 
-		if config.ConfigBackup != config.Conf {
+		if !reflect.DeepEqual(config.ConfigBackup, config.Conf) {
 			if err = server.StopBackend(); err != nil {
 				dialog.ShowError(fmt.Errorf("停止后端服务失败: %v", err), window)
 				log.GetLogger().Error("停止后端服务失败", zap.Error(err))

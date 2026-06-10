@@ -1,6 +1,6 @@
-# KrillinAI-CLI — PROJECT AGENTS.md
+# AgenticDub — PROJECT AGENTS.md
 
-**Binary**: `krillin-ai`
+**Project**: `AgenticDub`
 **Module**: `krillin-ai`
 **Language**: Go 1.22+
 
@@ -24,10 +24,22 @@ AI 影片翻譯配音工具。核心流程：
 | 服務 | 端點 | 模型 |
 |------|------|------|
 | **LLM** | `http://localhost:4000/v1/chat/completions` | `aiark/gemma4-e2b`, `aiark/qwen36-35b-iq3`, `aiark/deepseek-r1-14b` |
-| **STT** | `http://localhost:4000/v1/audio/transcriptions` | `faster-whisper-large-v3-fp16` |
-| **TTS** | `http://localhost:8082/v1/audio/speech` | `Qwen3-TTS-0.6B-CustomVoice` |
+| **STT** | `http://localhost:8006/v1/audio/transcriptions` | `faster-whisper-large-v3-fp16` |
+| **TTS** | `http://localhost:8002/v1/audio/speech` | `Qwen3-TTS-0.6B-CustomVoice` |
 
 所有端點皆為 OpenAI-compatible，共享 `sashabaranov/go-openai` 客戶端。
+
+## XAI / GROK OAUTH (experimental)
+
+目前 xAI / Grok 只作為 experimental OAuth LLM provider：
+- 不使用 `XAI_API_KEY`
+- token 預設路徑：`~/.agenticdub/auth/xai.json`
+- 本機 Hermes Agent 整合路徑：`~/.hermes/auth.json`
+- CLI status：`go run ./cmd/cli auth xai status`
+- CLI probe：`go run ./cmd/cli auth xai probe --token-path ~/.hermes/auth.json --model grok-4.3`
+- model profile：`models.llm.grok` → `provider = "xai-oauth"`, `model = "grok-4.3"`
+
+STT / TTS 尚未接入 xAI OAuth；先驗證 Grok LLM OAuth entitlement，再擴展到 audio surface。
 
 ---
 
@@ -36,10 +48,12 @@ AI 影片翻譯配音工具。核心流程：
 ```
 cmd/
   server/              # 目前 entry point (Gin web server)
-  polydub/             # 未來 CLI entry point (cobra)
+  cli/                 # 目前 CLI entry point (cobra)
+  desktop/             # 桌面版入口
+  mcp/                 # MCP server 入口
 
 internal/
-  agent/               # [規劃新增] Agent 核心
+  agent/               # Agent 核心
     planner.go         # LLM 規劃翻譯策略
     tool.go            # Tool definitions (STT/TTS/LLM)
     memory.go          # 術語庫、對話歷史
@@ -48,6 +62,7 @@ internal/
   deps/                # 環境依賴檢查 (ffmpeg, yt-dlp)
   dto/                 # Data transfer objects
   handler/             # API handler + config UI
+  translator/          # 字幕翻譯、切分、對齊
   response/            # API response wrappers
   router/              # Gin router setup
   server/              # Gin server 啟動
@@ -56,8 +71,10 @@ internal/
     srt2speech.go      # TTS 合成
     srt_embed.go       # 字幕燒錄進影片
     timestamps.go      # 時間軸對齊
+  providers/           # STT / LLM / TTS providers
   storage/             # 檔案處理工具
   types/               # 類型定義 + 翻譯 prompts
+  desktop/             # 桌面 UI
 
 pkg/
   aliyun/              # 阿里雲 STT/TTS/OSS
@@ -81,8 +98,14 @@ config/
 # Web server mode (目前)
 go run ./cmd/server/main.go
 
-# 未來 CLI mode (cobra)
-go run ./cmd/polydub/main.go run "https://youtube.com/watch?v=xxx"
+# CLI mode (目前)
+go run ./cmd/cli run "https://youtube.com/watch?v=xxx"
+
+# Desktop mode
+go run ./cmd/desktop
+
+# MCP server
+go run ./cmd/mcp
 ```
 
 ---
@@ -147,22 +170,23 @@ flag > 環境變數 > `config/config.toml` > 預設值
 
 ```bash
 # 開發
-go build -o krillin-ai ./cmd/server/   # 編譯 web server
+go build -o AgenticDub ./cmd/server/     # 編譯 web server
+go build -o AgenticDub-cli ./cmd/cli/    # 編譯 CLI
 go test ./...                            # 測試
 go test -cover ./...                     # 含覆蓋率
 
 # 環境檢查 (doctor)
-# [規劃] krillin-ai doctor
+go run ./cmd/cli doctor
 
-# 影片翻譯 (CLI mode，未來)
-# krillin-ai run "url" --target-lang "繁體中文"
+# 影片翻譯 (CLI mode)
+go run ./cmd/cli run "url" --target-lang "繁體中文"
 ```
 
 ---
 
 ## ANTI-PATTERNS
 
-- 禁止在 `internal/service/` 直接實例化 provider（統一走 `service.NewService()`）
+- 禁止在業務流程函式內分散建立 provider；統一集中在 `service.NewService()` / `NewServiceWithConfig()`
 - 禁止在 `types/` 放業務邏輯（純資料結構 + prompts）
 - 禁止在 cmd/ 層寫商業邏輯
 
@@ -179,4 +203,4 @@ go test -cover ./...                     # 含覆蓋率
 - [ ] Phase 6：SQLite task DB — 可恢復 pipeline
 - [ ] Phase 7：Reflective translation (3-step)
 
-**Current：Phase 5 規劃中**
+**Current：Phase 5 進行中**

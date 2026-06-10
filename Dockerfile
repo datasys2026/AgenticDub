@@ -29,10 +29,10 @@ RUN mkdir -p bin && \
     wget -O bin/edge-tts "$EDGE_TTS_URL" && \
     chmod +x bin/yt-dlp bin/edge-tts
 
-COPY KrillinAI ./
+COPY AgenticDub ./
 
 RUN mkdir -p /app/models && \
-    chmod +x ./KrillinAI
+    chmod +x ./AgenticDub
 
 VOLUME ["/app/bin", "/app/models"]
 
@@ -40,4 +40,4 @@ ENV PATH="/app/bin:${PATH}"
 
 EXPOSE 8888/tcp
 
-ENTRYPOINT ["./KrillinAI"]
+ENTRYPOINT ["./AgenticDub"]

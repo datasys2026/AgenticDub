@@ -14,9 +14,13 @@
 [mcp]
     server_url = "http://127.0.0.1:8888" # MCP server 连接的后端地址
 
+[xai_oauth]
+    base_url = "https://api.x.ai/v1" # Experimental Grok OAuth provider base URL
+    token_path = "~/.agenticdub/auth/xai.json" # OAuth token JSON path. Use ~/.hermes/auth.json to reuse Hermes Agent OAuth.
+
 # 下方的配置不是都要填，请结合文档说明进行配置
 
-[llm] #LLM provider: aiark, openai
+[llm] #LLM provider: aiark, openai, xai-oauth
     provider = "aiark" # LLM provider selection
     base_url = "https://aiark.com.tw/v1" # Base URL for LLM API
     api_key = "" # API密钥
@@ -60,3 +64,45 @@
             access_key_id = ""
             access_key_secret = ""
             app_key= ""
+
+[models.llm.fast]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/qwen36-35b"
+
+[models.llm.quality]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-31b-qat"
+
+[models.llm.external]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-26b-qat"
+
+[models.llm.light]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-e4b"
+
+[models.llm.grok]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "grok-4.3"
+
+[models.stt.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_STT_API_KEY"
+    model = "aiark/faster-whisper-large-v3-fp16"
+
+[models.tts.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/tts/v1"
+    api_key_env = "AIARK_TTS_API_KEY"
+    model = "aiark/qwen3-tts-0.6b-customvoice"
+    voices = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]

@@ -11,6 +11,10 @@
     host = "127.0.0.1"
     port = 8888
 
+[xai_oauth]
+    base_url = "https://api.x.ai/v1"
+    token_path = "~/.hermes/auth.json"
+
 [llm]
     base_url = "https://aiark.com.tw"
     api_key = "datasys2026"
@@ -28,6 +32,30 @@
 [tts]
     provider = "openai"
     [tts.openai]
-        base_url = "https://aiark.com.tw"
+        base_url = "https://aiark.com.tw/tts/v1"
         api_key = "datasys2026"
         model = "aiark/qwen3-tts-0.6b-customvoice"
+
+[models.llm.external]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-26b-qat"
+
+[models.llm.grok]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "grok-4.3"
+
+[models.stt.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_STT_API_KEY"
+    model = "aiark/faster-whisper-large-v3-fp16"
+
+[models.tts.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/tts/v1"
+    api_key_env = "AIARK_TTS_API_KEY"
+    model = "aiark/qwen3-tts-0.6b-customvoice"
+    voices = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]

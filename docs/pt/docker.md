@@ -1,4 +1,8 @@
-# Guia de Implantação do Docker
+# Guia de Implantação do Docker (Legacy / não verificado)
+
+A implantação com Docker é atualmente um caminho legacy herdado do projeto upstream e ainda não foi verificada como método oficialmente suportado para o AgenticDub. Os caminhos principais suportados são o Go server local, CLI, desktop app e MCP server.
+
+Os exemplos abaixo são mantidos apenas como referência. Não trate o nome da imagem publicada nem os trechos compose como instruções atuais de release do AgenticDub até que o Docker support seja reconstruído e verificado.
 
 ## Começando Rápido
 Primeiro, prepare o arquivo de configuração, definindo a porta de escuta do servidor como `8888` e o endereço de escuta do servidor como `0.0.0.0`.
@@ -26,7 +30,7 @@ services:
 ```
 
 ## Persistência do Modelo
-Se você usar o modelo fasterwhisper, o KrillinAI fará o download automático dos arquivos necessários para o modelo nos diretórios `/app/models` e `/app/bin`. Esses arquivos serão perdidos após a exclusão do contêiner. Se precisar persistir o modelo, você pode mapear esses dois diretórios para um diretório no host.
+Se você usar o modelo fasterwhisper, o AgenticDub fará o download automático dos arquivos necessários para o modelo nos diretórios `/app/models` e `/app/bin`. Esses arquivos serão perdidos após a exclusão do contêiner. Se precisar persistir o modelo, você pode mapear esses dois diretórios para um diretório no host.
 
 ### Iniciar com docker run
 ```bash

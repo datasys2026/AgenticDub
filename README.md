@@ -1,6 +1,6 @@
 <div align="center">
 
-# KrillinAI-CLI
+# AgenticDub
 
 AI 影片翻譯配音工具（Go CLI）
 
@@ -21,7 +21,7 @@ AI 影片翻譯配音工具（Go CLI）
 go run ./cmd/server/main.go
 
 # MCP server mode（供 AI client 呼叫）
-go build -o krillin-mcp ./cmd/mcp/ && ./krillin-mcp
+go build -o agenticdub-mcp ./cmd/mcp/ && ./agenticdub-mcp
 ```
 
 ## 架構
@@ -30,7 +30,8 @@ go build -o krillin-mcp ./cmd/mcp/ && ./krillin-mcp
 cmd/
   server/              # Web server entry point (Gin)
   mcp/                 # MCP server entry point
-  polydub/             # 未來 CLI entry point (cobra)
+  cli/                 # CLI entry point (cobra)
+  desktop/             # 桌面版入口
 
 internal/
   agent/               # Agent 核心
@@ -57,12 +58,12 @@ pkg/
 
 ## MCP Server
 
-MCP server 讓 AI client（如 Claude Desktop）可以呼叫 KrillinAI 的翻譯功能。
+MCP server 讓 AI client（如 Claude Desktop）可以呼叫 AgenticDub 的翻譯功能。
 
 ### 編譯
 
 ```bash
-go build -o krillin-mcp ./cmd/mcp/
+go build -o agenticdub-mcp ./cmd/mcp/
 ```
 
 ### 設定
@@ -79,8 +80,8 @@ server_url = "http://127.0.0.1:8888"  # 預設使用 [server] 的 host:port
 ```json
 {
   "mcpServers": {
-    "krillin-ai": {
-      "command": "/absolute/path/to/krillin-mcp"
+    "agenticdub": {
+      "command": "/absolute/path/to/agenticdub-mcp"
     }
   }
 }
@@ -90,6 +91,7 @@ server_url = "http://127.0.0.1:8888"  # 預設使用 [server] 的 host:port
 
 | Tool | 說明 |
 |------|------|
+| `list_model_profiles` | 列出可用 LLM/STT/TTS profile 與 0.6B TTS voices |
 | `translate_video` | 翻譯影片（URL → STT → 翻譯 → TTS → 燒錄） |
 | `get_task_status` | 查詢任務狀態 |
 | `list_tasks` | 列出所有任務 |
@@ -97,6 +99,23 @@ server_url = "http://127.0.0.1:8888"  # 預設使用 [server] 的 host:port
 | `reject_hitl` | 否決 HITL 審核，放棄任務 |
 | `get_review` | 取得 review.txt 內容 |
 | `get_review_status` | 取得審核狀態 |
+
+### xAI / Grok OAuth（experimental）
+
+AgenticDub 已加入第一階段 xAI OAuth LLM provider。這條路徑不使用 `XAI_API_KEY`，而是讀取本機 OAuth token 檔：
+
+```bash
+agenticdub auth xai status --token-path ~/.agenticdub/auth/xai.json
+```
+
+若本機已登入 Hermes Agent 的 xAI OAuth，可直接重用 Hermes auth 檔：
+
+```bash
+agenticdub auth xai status --token-path ~/.hermes/auth.json
+agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.3
+```
+
+目前已完成 token store、OAuth bearer LLM provider、`grok` model profile、狀態檢查與 live entitlement probe。Browser login、STT、TTS 尚未接入，因為 OAuth surface 可能受 Grok subscription / entitlement 限制。
 
 ### 使用範例
 
@@ -106,10 +125,15 @@ Claude：使用 translate_video tool
         - url: "https://youtube.com/watch?v=xxx"
         - target_lang: "繁體中文"
         - tts: true
-        - voice: "Ryan"
+        - llm_profile: "external"
+        - stt_profile: "default"
+        - tts_profile: "default"
+        - voice: "Vivian"
 
 結果：task_id = "xxx_abc1"
 ```
+
+`translate_video` 預設使用 `llm_profile = "external"`，也就是 `aiark/gemma4-26b-qat`。若要測試 Grok OAuth LLM，可使用 `llm_profile = "grok"`。0.6B TTS preset voices 可用 `Vivian`、`Serena`、`Uncle_Fu`、`Dylan`、`Eric`、`Ryan`、`Aiden`、`Ono_Anna`、`Sohee`。
 
 ## Phase 狀態
 
@@ -177,7 +201,8 @@ max_concurrency = 1
 ## 開發
 
 ```bash
-go build -o krillin-ai ./cmd/server/   # 編譯
+go build -o AgenticDub ./cmd/server/    # 編譯 web server
+go build -o agenticdub ./cmd/cli/       # 編譯 CLI
 go test ./...                           # 測試
 go test -cover ./...                    # 含覆蓋率
 ```

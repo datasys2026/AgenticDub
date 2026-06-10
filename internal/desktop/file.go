@@ -3,6 +3,7 @@ package desktop
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -155,7 +156,7 @@ func (fm *FileManager) uploadFile(filePath, fileName string) error {
 	}
 
 	if result.Error != 0 && result.Error != 200 {
-		return fmt.Errorf(result.Msg)
+		return errors.New(result.Msg)
 	}
 
 	fm.files = append(fm.files, result.Data.FilePath)
@@ -213,7 +214,7 @@ func (fm *FileManager) uploadMultipleFiles(filePaths []string, fileNames []strin
 	}
 
 	if result.Error != 0 && result.Error != 200 {
-		return fmt.Errorf(result.Msg)
+		return errors.New(result.Msg)
 	}
 
 	fm.files = append(fm.files, result.Data.FilePath...)

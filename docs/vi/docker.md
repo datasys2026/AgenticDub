@@ -1,4 +1,8 @@
-# Hướng dẫn triển khai Docker
+# Hướng dẫn triển khai Docker (Legacy / chưa xác minh)
+
+Triển khai Docker hiện là đường dẫn legacy kế thừa từ dự án upstream và chưa được xác minh như một phương thức triển khai được hỗ trợ chính thức cho AgenticDub. Các đường dẫn được hỗ trợ chính hiện là Go server cục bộ, CLI, desktop app và MCP server.
+
+Các ví dụ bên dưới chỉ được giữ lại để tham khảo. Không xem tên image đã xuất bản hoặc các đoạn compose là hướng dẫn phát hành hiện tại của AgenticDub cho đến khi Docker support được làm lại và xác minh.
 
 ## Bắt đầu nhanh
 Trước tiên, chuẩn bị tệp cấu hình, thiết lập cổng lắng nghe của máy chủ là `8888`, địa chỉ lắng nghe của máy chủ là `0.0.0.0`.
@@ -26,7 +30,7 @@ services:
 ```
 
 ## Lưu trữ mô hình
-Nếu sử dụng mô hình fasterwhisper, KrillinAI sẽ tự động tải xuống các tệp cần thiết cho mô hình vào thư mục `/app/models` và thư mục `/app/bin`. Sau khi xóa container, các tệp này sẽ bị mất. Nếu cần lưu trữ mô hình, bạn có thể ánh xạ hai thư mục này đến thư mục của máy chủ.
+Nếu sử dụng mô hình fasterwhisper, AgenticDub sẽ tự động tải xuống các tệp cần thiết cho mô hình vào thư mục `/app/models` và thư mục `/app/bin`. Sau khi xóa container, các tệp này sẽ bị mất. Nếu cần lưu trữ mô hình, bạn có thể ánh xạ hai thư mục này đến thư mục của máy chủ.
 
 ### Khởi động bằng docker run
 ```bash

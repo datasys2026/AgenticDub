@@ -1,4 +1,8 @@
-# Guide de déploiement Docker
+# Guide de déploiement Docker (Legacy / non vérifié)
+
+Le déploiement Docker est actuellement un chemin legacy hérité du projet upstream et n'a pas encore été vérifié comme mode de déploiement officiellement pris en charge pour AgenticDub. Les chemins principalement pris en charge sont le Go server local, la CLI, la desktop app et le MCP server.
+
+Les exemples ci-dessous sont conservés uniquement comme référence. Ne considérez pas le nom d'image publié ni les extraits compose comme des instructions de publication AgenticDub actuelles tant que le Docker support n'a pas été reconstruit et vérifié.
 
 ## Démarrage rapide
 Préparez d'abord le fichier de configuration, en définissant le port d'écoute du serveur sur `8888` et l'adresse d'écoute du serveur sur `0.0.0.0`.
@@ -26,7 +30,7 @@ services:
 ```
 
 ## Modèle de persistance
-Si vous utilisez le modèle fasterwhisper, KrillinAI téléchargera automatiquement les fichiers nécessaires au modèle dans le répertoire `/app/models` et le répertoire `/app/bin`. Ces fichiers seront perdus après la suppression du conteneur. Si vous avez besoin de persister le modèle, vous pouvez mapper ces deux répertoires à un répertoire de l'hôte.
+Si vous utilisez le modèle fasterwhisper, AgenticDub téléchargera automatiquement les fichiers nécessaires au modèle dans le répertoire `/app/models` et le répertoire `/app/bin`. Ces fichiers seront perdus après la suppression du conteneur. Si vous avez besoin de persister le modèle, vous pouvez mapper ces deux répertoires à un répertoire de l'hôte.
 
 ### Démarrage avec docker run
 ```bash
