@@ -172,3 +172,46 @@ func TestTranslateVideoDoesNotDefaultLLMProfile(t *testing.T) {
 		t.Fatalf("expected empty llm_profile, got %#v", got)
 	}
 }
+
+func TestTranslateVideoDefaultsVoiceForXAITTSProfile(t *testing.T) {
+	originalServerURL := serverURL
+	originalHTTPClient := httpClient
+	originalConf := config.Conf
+	t.Cleanup(func() {
+		serverURL = originalServerURL
+		httpClient = originalHTTPClient
+		config.Conf = originalConf
+	})
+
+	config.Conf.Models.TTS = map[string]config.ModelProfileConfig{
+		"xai": {
+			Provider: "xai-oauth",
+			Voices:   []string{"eve", "ara"},
+		},
+	}
+
+	var payload map[string]any
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"error":0,"data":{"task_id":"task-123"}}`))
+	}))
+	defer testServer.Close()
+
+	serverURL = testServer.URL
+	httpClient = testServer.Client()
+
+	_, _, err := TranslateVideo(context.Background(), nil, TranslateVideoInput{
+		URL:        "https://example.com/video.mp4",
+		TTS:        true,
+		TTSProfile: "xai",
+	})
+	if err != nil {
+		t.Fatalf("TranslateVideo failed: %v", err)
+	}
+	if got := payload["tts_voice_code"]; got != "eve" {
+		t.Fatalf("expected xAI default voice eve, got %#v", got)
+	}
+}

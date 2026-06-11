@@ -52,14 +52,14 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	if input.TargetLang == "" {
 		input.TargetLang = "繁體中文"
 	}
-	if input.Voice == "" {
-		input.Voice = "Ryan"
-	}
 	if input.STTProfile == "" {
 		input.STTProfile = "default"
 	}
 	if input.TTSProfile == "" {
 		input.TTSProfile = "default"
+	}
+	if input.Voice == "" {
+		input.Voice = defaultVoiceForTTSProfile(input.TTSProfile)
 	}
 	if input.EmbedVideoType == "" {
 		input.EmbedVideoType = "none"
@@ -121,6 +121,17 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 
 	return nil, TranslateVideoOutput{TaskID: taskID}, nil
+}
+
+func defaultVoiceForTTSProfile(profileName string) string {
+	profile, ok := config.Conf.Models.TTS[profileName]
+	if ok && profile.Provider == "xai-oauth" {
+		if len(profile.Voices) > 0 {
+			return profile.Voices[0]
+		}
+		return "eve"
+	}
+	return "Ryan"
 }
 
 type ListModelProfilesInput struct{}
