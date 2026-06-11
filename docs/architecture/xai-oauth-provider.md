@@ -15,11 +15,11 @@ The intended long-term target is to use a Grok / SuperGrok / X Premium+ OAuth se
 - Token store: implemented
 - Token status CLI: implemented via `agenticdub auth xai status`
 - LLM provider: implemented for xAI Responses API
-- Model profile: `models.llm.grok`
+- STT provider: implemented for xAI STT API
+- TTS provider: implemented for xAI TTS API
+- Model profiles: `models.llm.grok`, `models.stt.xai`, `models.tts.xai`
 - Live entitlement probe: implemented via `agenticdub auth xai probe`
 - Browser OAuth login: not implemented
-- xAI STT provider: not implemented
-- xAI TTS provider: not implemented
 
 ## Why OAuth-Only
 
@@ -55,8 +55,20 @@ The implementation is intentionally split by responsibility:
   - Calls `/v1/responses`.
   - Does not know where the token came from.
 
+- `internal/providers/stt`
+  - Owns the xAI OAuth STT provider.
+  - Calls `/v1/stt`.
+  - Converts word timings into AgenticDub transcription data.
+
+- `internal/providers/tts`
+  - Owns the xAI OAuth TTS provider.
+  - Calls `/v1/tts`.
+  - Writes the returned audio stream to the requested output file.
+
 - `internal/service`
   - Wires `llm.provider = "xai-oauth"` to the xAI OAuth LLM provider.
+  - Wires `transcribe.provider = "xai-oauth"` to the xAI OAuth STT provider.
+  - Wires `tts.provider = "xai-oauth"` to the xAI OAuth TTS provider.
 
 - `cmd/cli`
   - Exposes OAuth diagnostics such as `agenticdub auth xai status`.
@@ -76,8 +88,24 @@ token_path = "~/.agenticdub/auth/xai.json"
 [models.llm.grok]
 provider = "xai-oauth"
 base_url = "https://api.x.ai/v1"
-model = "grok-4.3"
+model = "grok-4.20-0309-non-reasoning"
+
+[models.stt.xai]
+provider = "xai-oauth"
+base_url = "https://api.x.ai/v1"
+model = "xai-stt"
+
+[models.tts.xai]
+provider = "xai-oauth"
+base_url = "https://api.x.ai/v1"
+model = "xai-tts"
+voices = ["eve", "ara", "rex", "sal", "leo"]
 ```
+
+Live OAuth testing on this machine showed `grok-4.20-0309-non-reasoning`
+returns stable JSON for short translation prompts. `grok-4.3` entitlement
+checks pass, but translation prompts can return malformed JSON through the
+OAuth Responses path, so it is not the current AgenticDub translation default.
 
 To reuse this machine's Hermes Agent OAuth login, point `token_path` at Hermes:
 
@@ -168,7 +196,8 @@ Current tests cover:
 - OAuth bearer authorization header
 - response parsing
 - `403` entitlement diagnostics
-- service factory wiring for `xai-oauth`
+- STT/TTS OAuth request shape
+- service factory wiring for `xai-oauth` LLM/STT/TTS
 
 Live tests must be explicit manual commands because they depend on account entitlement.
 
@@ -189,7 +218,7 @@ agenticdub auth xai status --token-path ~/.hermes/auth.json
 3. Run a live Responses API probe:
 
 ```bash
-agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.3
+agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.20-0309-non-reasoning
 ```
 
 The probe sends a minimal prompt to `/v1/responses` and surfaces failures:
@@ -200,6 +229,11 @@ The probe sends a minimal prompt to `/v1/responses` and surfaces failures:
 - `401` invalid token
 - `403` subscription / entitlement blocked
 - empty model response
+
+4. Run live STT/TTS endpoint checks with the same OAuth token before enabling a long pipeline job.
+
+On this machine, Hermes OAuth token smoke tests passed against `/v1/tts` with voice
+`eve` and `/v1/stt` with word timings enabled.
 
 ## Risks
 
@@ -215,10 +249,10 @@ The probe sends a minimal prompt to `/v1/responses` and surfaces failures:
 1. Token store and token status command.
 2. xAI OAuth LLM provider.
 3. Manual live probe for Grok 4.3.
-4. Browser OAuth login flow.
-5. xAI STT provider.
-6. xAI TTS provider.
-7. Add `grok` profiles to MCP and CLI workflows.
+4. xAI STT provider.
+5. xAI TTS provider.
+6. Add `grok` and `xai` profiles to MCP and CLI workflows.
+7. Browser OAuth login flow.
 8. Decide whether OAuth support is stable enough to become the default.
 
 ## Non-Goals For Now

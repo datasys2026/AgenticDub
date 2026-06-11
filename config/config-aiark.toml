@@ -45,7 +45,7 @@
 [models.llm.grok]
     provider = "xai-oauth"
     base_url = "https://api.x.ai/v1"
-    model = "grok-4.3"
+    model = "grok-4.20-0309-non-reasoning"
 
 [models.stt.default]
     provider = "openai"
@@ -53,9 +53,20 @@
     api_key_env = "AIARK_STT_API_KEY"
     model = "aiark/faster-whisper-large-v3-fp16"
 
+[models.stt.xai]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "xai-stt"
+
 [models.tts.default]
     provider = "openai"
     base_url = "https://aiark.com.tw/tts/v1"
     api_key_env = "AIARK_TTS_API_KEY"
     model = "aiark/qwen3-tts-0.6b-customvoice"
     voices = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
+
+[models.tts.xai]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "xai-tts"
+    voices = ["eve", "ara", "rex", "sal", "leo"]

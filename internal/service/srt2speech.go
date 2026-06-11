@@ -167,10 +167,11 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 	stepParam.TtsResultFilePath = finalOutput
 
 	videoWithTtsPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskVideoWithTtsFileName)
-	// 合成音频替换后的新视频
-	err = util.ReplaceAudioInVideo(stepParam.InputVideoPath, finalOutput, videoWithTtsPath)
+	// Keep the original voice quietly underneath the dubbed track.
+	err = util.MixDubbedAudioInVideo(stepParam.InputVideoPath, finalOutput, videoWithTtsPath, util.DefaultOriginalAudioVolume, util.DefaultDubbedAudioVolume)
 	if err != nil {
-		log.GetLogger().Error("srtFileToSpeech ReplaceAudioInVideo error", zap.Any("stepParam", stepParam), zap.Error(err))
+		log.GetLogger().Error("srtFileToSpeech MixDubbedAudioInVideo error", zap.Any("stepParam", stepParam), zap.Error(err))
+		return fmt.Errorf("srtFileToSpeech MixDubbedAudioInVideo error: %w", err)
 	}
 	stepParam.VideoWithTtsFilePath = videoWithTtsPath
 	// 更新字幕任务信息

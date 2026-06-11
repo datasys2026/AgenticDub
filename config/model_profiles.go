@@ -25,7 +25,7 @@ func ConfigForModelProfiles(base Config, llmProfile, sttProfile, ttsProfile, tts
 			return Config{}, fmt.Errorf("unknown stt_profile: %s", sttProfile)
 		}
 		resolved.Transcribe.Provider = valueOrDefault(profile.Provider, resolved.Transcribe.Provider)
-		if resolved.Transcribe.Provider == "openai" {
+		if resolved.Transcribe.Provider == "openai" || resolved.Transcribe.Provider == "xai-oauth" {
 			resolved.Transcribe.Openai.BaseUrl = valueOrDefault(profile.BaseURL, resolved.Transcribe.Openai.BaseUrl)
 			resolved.Transcribe.Openai.ApiKey = resolveProfileAPIKey(profile, resolved.Transcribe.Openai.ApiKey)
 			resolved.Transcribe.Openai.Model = valueOrDefault(profile.Model, resolved.Transcribe.Openai.Model)
@@ -41,7 +41,7 @@ func ConfigForModelProfiles(base Config, llmProfile, sttProfile, ttsProfile, tts
 			return Config{}, fmt.Errorf("unknown tts_voice for profile %s: %s", ttsProfile, ttsVoice)
 		}
 		resolved.Tts.Provider = valueOrDefault(profile.Provider, resolved.Tts.Provider)
-		if resolved.Tts.Provider == "openai" {
+		if resolved.Tts.Provider == "openai" || resolved.Tts.Provider == "xai-oauth" {
 			resolved.Tts.Openai.BaseUrl = valueOrDefault(profile.BaseURL, resolved.Tts.Openai.BaseUrl)
 			resolved.Tts.Openai.ApiKey = resolveProfileAPIKey(profile, resolved.Tts.Openai.ApiKey)
 			resolved.Tts.Openai.Model = valueOrDefault(profile.Model, resolved.Tts.Openai.Model)

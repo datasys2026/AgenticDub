@@ -72,7 +72,7 @@ func TestXAIOAuthProvider_ChatCompletion(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewXAIOAuthProvider(server.URL, "grok-4.3", staticBearerTokenSource{token: "oauth-token"}, server.Client())
+	provider := NewXAIOAuthProvider(server.URL, "grok-4.20-0309-non-reasoning", staticBearerTokenSource{token: "oauth-token"}, server.Client())
 	resp, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
 	if err != nil {
 		t.Fatalf("ChatCompletion failed: %v", err)
@@ -86,8 +86,8 @@ func TestXAIOAuthProvider_ChatCompletion(t *testing.T) {
 	if capturedPath != "/v1/responses" {
 		t.Fatalf("expected /v1/responses, got %q", capturedPath)
 	}
-	if capturedModel != "grok-4.3" {
-		t.Fatalf("expected grok-4.3, got %q", capturedModel)
+	if capturedModel != "grok-4.20-0309-non-reasoning" {
+		t.Fatalf("expected grok-4.20-0309-non-reasoning, got %q", capturedModel)
 	}
 }
 
@@ -102,7 +102,7 @@ func TestXAIOAuthProvider_ParseOutputContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewXAIOAuthProvider(server.URL, "grok-4.3", staticBearerTokenSource{token: "oauth-token"}, server.Client())
+	provider := NewXAIOAuthProvider(server.URL, "grok-4.20-0309-non-reasoning", staticBearerTokenSource{token: "oauth-token"}, server.Client())
 	resp, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
 	if err != nil {
 		t.Fatalf("ChatCompletion failed: %v", err)
@@ -125,7 +125,7 @@ func TestXAIOAuthProvider_ConcatenatesOutputTextFragments(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewXAIOAuthProvider(server.URL, "grok-4.3", staticBearerTokenSource{token: "oauth-token"}, server.Client())
+	provider := NewXAIOAuthProvider(server.URL, "grok-4.20-0309-non-reasoning", staticBearerTokenSource{token: "oauth-token"}, server.Client())
 	resp, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
 	if err != nil {
 		t.Fatalf("ChatCompletion failed: %v", err)
@@ -142,7 +142,7 @@ func TestXAIOAuthProvider_EntitlementError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := NewXAIOAuthProvider(server.URL, "grok-4.3", staticBearerTokenSource{token: "oauth-token"}, server.Client())
+	provider := NewXAIOAuthProvider(server.URL, "grok-4.20-0309-non-reasoning", staticBearerTokenSource{token: "oauth-token"}, server.Client())
 	_, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
 	var entitlementErr *XAIEntitlementError
 	if !errors.As(err, &entitlementErr) {
@@ -155,7 +155,7 @@ func TestXAIOAuthProvider_EntitlementError(t *testing.T) {
 
 func TestXAIOAuthProvider_TokenSourceError(t *testing.T) {
 	expected := errors.New("missing token")
-	provider := NewXAIOAuthProvider("https://api.x.ai", "grok-4.3", staticBearerTokenSource{err: expected}, http.DefaultClient)
+	provider := NewXAIOAuthProvider("https://api.x.ai", "grok-4.20-0309-non-reasoning", staticBearerTokenSource{err: expected}, http.DefaultClient)
 
 	_, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
 	if !errors.Is(err, expected) {

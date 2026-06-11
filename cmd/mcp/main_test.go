@@ -12,7 +12,7 @@ import (
 	"krillin-ai/config"
 )
 
-func TestListModelProfilesIncludesGrok(t *testing.T) {
+func TestListModelProfilesIncludesXAIProfiles(t *testing.T) {
 	originalConf := config.Conf
 	t.Cleanup(func() {
 		config.Conf = originalConf
@@ -21,7 +21,22 @@ func TestListModelProfilesIncludesGrok(t *testing.T) {
 		"grok": {
 			Provider: "xai-oauth",
 			BaseURL:  "https://api.x.ai/v1",
-			Model:    "grok-4.3",
+			Model:    "grok-4.20-0309-non-reasoning",
+		},
+	}
+	config.Conf.Models.STT = map[string]config.ModelProfileConfig{
+		"xai": {
+			Provider: "xai-oauth",
+			BaseURL:  "https://api.x.ai/v1",
+			Model:    "xai-stt",
+		},
+	}
+	config.Conf.Models.TTS = map[string]config.ModelProfileConfig{
+		"xai": {
+			Provider: "xai-oauth",
+			BaseURL:  "https://api.x.ai/v1",
+			Model:    "xai-tts",
+			Voices:   []string{"eve", "ara", "rex", "sal", "leo"},
 		},
 	}
 
@@ -37,8 +52,14 @@ func TestListModelProfilesIncludesGrok(t *testing.T) {
 	if grok.Provider != "xai-oauth" {
 		t.Fatalf("expected xai-oauth provider, got %q", grok.Provider)
 	}
-	if grok.Model != "grok-4.3" {
-		t.Fatalf("expected grok-4.3 model, got %q", grok.Model)
+	if grok.Model != "grok-4.20-0309-non-reasoning" {
+		t.Fatalf("expected grok-4.20-0309-non-reasoning model, got %q", grok.Model)
+	}
+	if output.STT["xai"].Model != "xai-stt" {
+		t.Fatalf("expected xai-stt STT profile, got %#v", output.STT["xai"])
+	}
+	if got := output.TTS["xai"].Voices; len(got) != 5 || got[0] != "eve" || got[4] != "leo" {
+		t.Fatalf("expected xAI TTS voices, got %#v", got)
 	}
 }
 
@@ -49,6 +70,18 @@ func TestTranslateVideoLLMProfileSchemaMentionsGrok(t *testing.T) {
 	}
 	if schema := field.Tag.Get("jsonschema"); !strings.Contains(schema, "grok") {
 		t.Fatalf("expected LLMProfile schema to mention grok, got %q", schema)
+	}
+}
+
+func TestTranslateVideoSTTAndTTSProfileSchemaMentionsXAI(t *testing.T) {
+	for _, fieldName := range []string{"STTProfile", "TTSProfile"} {
+		field, ok := reflect.TypeOf(TranslateVideoInput{}).FieldByName(fieldName)
+		if !ok {
+			t.Fatalf("expected %s field", fieldName)
+		}
+		if schema := field.Tag.Get("jsonschema"); !strings.Contains(schema, "xai") {
+			t.Fatalf("expected %s schema to mention xai, got %q", fieldName, schema)
+		}
 	}
 }
 
@@ -66,7 +99,7 @@ func TestTranslateVideoPostsGrokProfile(t *testing.T) {
 		"grok": {
 			Provider: "xai-oauth",
 			BaseURL:  "https://api.x.ai/v1",
-			Model:    "grok-4.3",
+			Model:    "grok-4.20-0309-non-reasoning",
 		},
 	}
 	config.Conf.Models.STT = map[string]config.ModelProfileConfig{

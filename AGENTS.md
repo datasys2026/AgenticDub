@@ -31,15 +31,17 @@ AI 影片翻譯配音工具。核心流程：
 
 ## XAI / GROK OAUTH (experimental)
 
-目前 xAI / Grok 只作為 experimental OAuth LLM provider：
+目前 xAI / Grok 作為 experimental OAuth LLM/STT/TTS provider：
 - 不使用 `XAI_API_KEY`
 - token 預設路徑：`~/.agenticdub/auth/xai.json`
 - 本機 Hermes Agent 整合路徑：`~/.hermes/auth.json`
 - CLI status：`go run ./cmd/cli auth xai status`
-- CLI probe：`go run ./cmd/cli auth xai probe --token-path ~/.hermes/auth.json --model grok-4.3`
-- model profile：`models.llm.grok` → `provider = "xai-oauth"`, `model = "grok-4.3"`
+- CLI probe：`go run ./cmd/cli auth xai probe --token-path ~/.hermes/auth.json --model grok-4.20-0309-non-reasoning`
+- model profile：`models.llm.grok` → `provider = "xai-oauth"`, `model = "grok-4.20-0309-non-reasoning"`
+- STT profile：`models.stt.xai` → `provider = "xai-oauth"`, `model = "xai-stt"`
+- TTS profile：`models.tts.xai` → `provider = "xai-oauth"`, `model = "xai-tts"`, voices `eve`, `ara`, `rex`, `sal`, `leo`
 
-STT / TTS 尚未接入 xAI OAuth；先驗證 Grok LLM OAuth entitlement，再擴展到 audio surface。
+OAuth audio surface 仍可能受 Grok subscription / entitlement 限制；本機已用 Hermes token smoke test 通過 xAI STT/TTS endpoint。
 
 ---
 

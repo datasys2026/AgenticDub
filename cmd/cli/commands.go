@@ -712,7 +712,7 @@ func runXAIProbe(ctx context.Context, opts xaiProbeOptions) error {
 		opts.BaseURL = "https://api.x.ai/v1"
 	}
 	if opts.Model == "" {
-		opts.Model = "grok-4.3"
+		opts.Model = "grok-4.20-0309-non-reasoning"
 	}
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
@@ -793,7 +793,7 @@ func init() {
 	xaiAuthStatusCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
 	xaiAuthProbeCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
 	xaiAuthProbeCmd.Flags().StringVar(&xaiBaseURL, "base-url", "https://api.x.ai/v1", "xAI API base URL")
-	xaiAuthProbeCmd.Flags().StringVar(&xaiProbeModel, "model", "grok-4.3", "xAI model to probe")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiProbeModel, "model", "grok-4.20-0309-non-reasoning", "xAI model to probe")
 }
 
 func main() {

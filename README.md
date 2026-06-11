@@ -112,10 +112,10 @@ agenticdub auth xai status --token-path ~/.agenticdub/auth/xai.json
 
 ```bash
 agenticdub auth xai status --token-path ~/.hermes/auth.json
-agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.3
+agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.20-0309-non-reasoning
 ```
 
-目前已完成 token store、OAuth bearer LLM provider、`grok` model profile、狀態檢查與 live entitlement probe。Browser login、STT、TTS 尚未接入，因為 OAuth surface 可能受 Grok subscription / entitlement 限制。
+目前已完成 token store、OAuth bearer LLM/STT/TTS providers、`grok`/`xai` model profiles、狀態檢查與 live entitlement probe。Browser login 尚未接入；OAuth surface 仍可能受 Grok subscription / entitlement 限制。
 
 ### 使用範例
 
@@ -133,7 +133,7 @@ Claude：使用 translate_video tool
 結果：task_id = "xxx_abc1"
 ```
 
-`translate_video` 預設使用 `llm_profile = "external"`，也就是 `aiark/gemma4-26b-qat`。若要測試 Grok OAuth LLM，可使用 `llm_profile = "grok"`。0.6B TTS preset voices 可用 `Vivian`、`Serena`、`Uncle_Fu`、`Dylan`、`Eric`、`Ryan`、`Aiden`、`Ono_Anna`、`Sohee`。
+`translate_video` 預設使用 aiark STT/TTS profile。若要測試全 xAI OAuth pipeline，可使用 `llm_profile = "grok"`、`stt_profile = "xai"`、`tts_profile = "xai"`、`voice = "eve"`。xAI TTS 內建 voices 可用 `eve`、`ara`、`rex`、`sal`、`leo`；aiark 0.6B TTS preset voices 可用 `Vivian`、`Serena`、`Uncle_Fu`、`Dylan`、`Eric`、`Ryan`、`Aiden`、`Ono_Anna`、`Sohee`。
 
 ## Phase 狀態
 

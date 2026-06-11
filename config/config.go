@@ -200,7 +200,7 @@ var Conf = Config{
 			"grok": {
 				Provider: "xai-oauth",
 				BaseURL:  "https://api.x.ai/v1",
-				Model:    "grok-4.3",
+				Model:    "grok-4.20-0309-non-reasoning",
 			},
 		},
 		STT: map[string]ModelProfileConfig{
@@ -209,6 +209,11 @@ var Conf = Config{
 				BaseURL:   "https://aiark.com.tw/v1",
 				ApiKeyEnv: "AIARK_STT_API_KEY",
 				Model:     "aiark/faster-whisper-large-v3-fp16",
+			},
+			"xai": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "xai-stt",
 			},
 		},
 		TTS: map[string]ModelProfileConfig{
@@ -227,6 +232,18 @@ var Conf = Config{
 					"Aiden",
 					"Ono_Anna",
 					"Sohee",
+				},
+			},
+			"xai": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "xai-tts",
+				Voices: []string{
+					"eve",
+					"ara",
+					"rex",
+					"sal",
+					"leo",
 				},
 			},
 		},
@@ -248,6 +265,7 @@ func validateConfig() error {
 		if Conf.Transcribe.Openai.ApiKey == "" {
 			return errors.New("使用OpenAI转录服务需要配置 OpenAI API Key")
 		}
+	case "xai-oauth":
 	case "fasterwhisper":
 		if Conf.Transcribe.Fasterwhisper.Model != "tiny" && Conf.Transcribe.Fasterwhisper.Model != "medium" && Conf.Transcribe.Fasterwhisper.Model != "large-v2" {
 			return errors.New("检测到开启了fasterwhisper，但模型选型配置不正确，请检查配置")

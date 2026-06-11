@@ -21,7 +21,7 @@ func TestConfigForSubtitleTaskAppliesGrokProfile(t *testing.T) {
 		"grok": {
 			Provider: "xai-oauth",
 			BaseURL:  "https://api.x.ai/v1",
-			Model:    "grok-4.3",
+			Model:    "grok-4.20-0309-non-reasoning",
 		},
 	}
 
@@ -37,8 +37,49 @@ func TestConfigForSubtitleTaskAppliesGrokProfile(t *testing.T) {
 	if resolved.Llm.Provider != "xai-oauth" {
 		t.Fatalf("expected xai-oauth provider, got %q", resolved.Llm.Provider)
 	}
-	if resolved.Llm.Model != "grok-4.3" {
-		t.Fatalf("expected grok-4.3 model, got %q", resolved.Llm.Model)
+	if resolved.Llm.Model != "grok-4.20-0309-non-reasoning" {
+		t.Fatalf("expected grok-4.20-0309-non-reasoning model, got %q", resolved.Llm.Model)
+	}
+}
+
+func TestConfigForSubtitleTaskAppliesXAISTTAndTTSProfiles(t *testing.T) {
+	originalConf := config.Conf
+	t.Cleanup(func() {
+		config.Conf = originalConf
+	})
+
+	config.Conf.Models.STT = map[string]config.ModelProfileConfig{
+		"xai": {
+			Provider: "xai-oauth",
+			BaseURL:  "https://api.x.ai/v1",
+			Model:    "xai-stt",
+		},
+	}
+	config.Conf.Models.TTS = map[string]config.ModelProfileConfig{
+		"xai": {
+			Provider: "xai-oauth",
+			BaseURL:  "https://api.x.ai/v1",
+			Model:    "xai-tts",
+			Voices:   []string{"eve", "ara", "rex", "sal", "leo"},
+		},
+	}
+
+	resolved, ok, err := configForSubtitleTask(dto.StartVideoSubtitleTaskReq{
+		STTProfile:   "xai",
+		TTSProfile:   "xai",
+		TtsVoiceCode: "eve",
+	})
+	if err != nil {
+		t.Fatalf("configForSubtitleTask failed: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected profile-specific config")
+	}
+	if resolved.Transcribe.Provider != "xai-oauth" {
+		t.Fatalf("expected xai-oauth STT provider, got %q", resolved.Transcribe.Provider)
+	}
+	if resolved.Tts.Provider != "xai-oauth" {
+		t.Fatalf("expected xai-oauth TTS provider, got %q", resolved.Tts.Provider)
 	}
 }
 
@@ -66,7 +107,7 @@ func TestServiceForSubtitleTaskReturnsProfileServiceInitError(t *testing.T) {
 		"grok": {
 			Provider: "xai-oauth",
 			BaseURL:  "https://api.x.ai/v1",
-			Model:    "grok-4.3",
+			Model:    "grok-4.20-0309-non-reasoning",
 		},
 	}
 
