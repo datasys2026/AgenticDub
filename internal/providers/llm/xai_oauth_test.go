@@ -112,6 +112,29 @@ func TestXAIOAuthProvider_ParseOutputContent(t *testing.T) {
 	}
 }
 
+func TestXAIOAuthProvider_ConcatenatesOutputTextFragments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"output": [
+				{"content": [{"type": "reasoning_text", "text": "ignore this"}]},
+				{"content": [{"type": "output_text", "text": "第一段"}]},
+				{"content": [{"type": "output_text", "text": "第二段"}]}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewXAIOAuthProvider(server.URL, "grok-4.3", staticBearerTokenSource{token: "oauth-token"}, server.Client())
+	resp, err := provider.ChatCompletion(context.Background(), []Message{{Role: "user", Content: "Hello"}})
+	if err != nil {
+		t.Fatalf("ChatCompletion failed: %v", err)
+	}
+	if resp.Content != "第一段第二段" {
+		t.Fatalf("expected concatenated output text, got %q", resp.Content)
+	}
+}
+
 func TestXAIOAuthProvider_EntitlementError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)

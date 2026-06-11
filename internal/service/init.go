@@ -1,7 +1,10 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"krillin-ai/config"
+	xaiauth "krillin-ai/internal/auth/xai"
 	"krillin-ai/internal/providers/llm"
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
@@ -25,10 +28,15 @@ type Service struct {
 }
 
 func NewService() *Service {
-	return NewServiceWithConfig(config.Conf)
+	svc, err := NewServiceWithConfig(config.Conf)
+	if err != nil {
+		log.GetLogger().Error("创建服务失败： ", zap.Error(err))
+		return nil
+	}
+	return svc
 }
 
-func NewServiceWithConfig(conf config.Config) *Service {
+func NewServiceWithConfig(conf config.Config) (*Service, error) {
 	var transcriber types.Transcriber
 	var chatCompleter types.ChatCompleter
 	var ttsClient types.Ttser
@@ -46,9 +54,11 @@ func NewServiceWithConfig(conf config.Config) *Service {
 		cc, err := aliyun.NewAsrClient(conf.Transcribe.Aliyun.Speech.AccessKeyId, conf.Transcribe.Aliyun.Speech.AccessKeySecret, conf.Transcribe.Aliyun.Speech.AppKey, true)
 		if err != nil {
 			log.GetLogger().Error("创建阿里云语音识别客户端失败： ", zap.Error(err))
-			return nil
+			return nil, fmt.Errorf("failed to create aliyun transcriber: %w", err)
 		}
 		transcriber = cc
+	default:
+		return nil, fmt.Errorf("unsupported transcribe provider: %s", conf.Transcribe.Provider)
 	}
 	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", conf.Transcribe.Provider))
 
@@ -64,7 +74,15 @@ func NewServiceWithConfig(conf config.Config) *Service {
 		if baseURL == "" {
 			baseURL = conf.XAI.BaseURL
 		}
-		provider := llm.NewXAIOAuthProviderFromTokenFile(baseURL, conf.Llm.Model, conf.XAI.TokenPath)
+		tokenPath := conf.XAI.TokenPath
+		if tokenPath == "" {
+			tokenPath = xaiauth.DefaultTokenPath()
+		}
+		tokenSource := xaiauth.NewFileTokenSource(xaiauth.NewFileTokenStore(tokenPath))
+		if _, err := tokenSource.BearerToken(context.Background()); err != nil {
+			return nil, fmt.Errorf("xAI OAuth token unavailable: %w", err)
+		}
+		provider := llm.NewXAIOAuthProvider(baseURL, conf.Llm.Model, tokenSource, nil)
 		chatCompleter = llm.NewChatCompleterAdapter(provider)
 	default:
 		provider := llm.NewOpenAIProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model, conf.Llm.ProxyAddr)
@@ -79,6 +97,8 @@ func NewServiceWithConfig(conf config.Config) *Service {
 		ttsClient = aliyun.NewTtsClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey)
 	case "edge-tts":
 		ttsClient = localtts.NewEdgeTtsClient()
+	default:
+		return nil, fmt.Errorf("unsupported tts provider: %s", conf.Tts.Provider)
 	}
 
 	return &Service{
@@ -87,5 +107,5 @@ func NewServiceWithConfig(conf config.Config) *Service {
 		TtsClient:        ttsClient,
 		OssClient:        aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
 		VoiceCloneClient: aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
-	}
+	}, nil
 }

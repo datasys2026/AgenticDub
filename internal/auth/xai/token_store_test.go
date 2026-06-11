@@ -200,3 +200,16 @@ func TestFileTokenSource_ExpiredToken(t *testing.T) {
 		t.Fatalf("expected ErrTokenExpired, got %v", err)
 	}
 }
+
+func TestFileTokenSource_TokenWithinExpiryLeeway(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "xai.json")
+	store := NewFileTokenStore(path)
+	if err := store.Save(Token{AccessToken: "access-token", ExpiresAt: time.Now().Add(time.Minute)}); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	_, err := NewFileTokenSource(store).BearerToken(t.Context())
+	if !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("expected ErrTokenExpired for token inside expiry leeway, got %v", err)
+	}
+}

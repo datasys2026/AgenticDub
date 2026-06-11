@@ -13,6 +13,18 @@ import (
 )
 
 func TestListModelProfilesIncludesGrok(t *testing.T) {
+	originalConf := config.Conf
+	t.Cleanup(func() {
+		config.Conf = originalConf
+	})
+	config.Conf.Models.LLM = map[string]config.ModelProfileConfig{
+		"grok": {
+			Provider: "xai-oauth",
+			BaseURL:  "https://api.x.ai/v1",
+			Model:    "grok-4.3",
+		},
+	}
+
 	_, output, err := ListModelProfiles(context.Background(), nil, ListModelProfilesInput{})
 	if err != nil {
 		t.Fatalf("ListModelProfiles failed: %v", err)
@@ -93,5 +105,37 @@ func TestTranslateVideoPostsGrokProfile(t *testing.T) {
 	}
 	if got := payload["llm_profile"]; got != "grok" {
 		t.Fatalf("expected grok llm_profile, got %#v", got)
+	}
+}
+
+func TestTranslateVideoDoesNotDefaultLLMProfile(t *testing.T) {
+	originalServerURL := serverURL
+	originalHTTPClient := httpClient
+	t.Cleanup(func() {
+		serverURL = originalServerURL
+		httpClient = originalHTTPClient
+	})
+
+	var payload map[string]any
+	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"error":0,"data":{"task_id":"task-123"}}`))
+	}))
+	defer testServer.Close()
+
+	serverURL = testServer.URL
+	httpClient = testServer.Client()
+
+	_, _, err := TranslateVideo(context.Background(), nil, TranslateVideoInput{
+		URL: "https://example.com/video.mp4",
+	})
+	if err != nil {
+		t.Fatalf("TranslateVideo failed: %v", err)
+	}
+	if got := payload["llm_profile"]; got != "" {
+		t.Fatalf("expected empty llm_profile, got %#v", got)
 	}
 }

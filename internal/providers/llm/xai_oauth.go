@@ -115,12 +115,16 @@ func parseXAIResponses(resp *http.Response) (string, error) {
 	if result.OutputText != "" {
 		return result.OutputText, nil
 	}
+	var parts []string
 	for _, output := range result.Output {
 		for _, content := range output.Content {
-			if content.Text != "" {
-				return content.Text, nil
+			if content.Type == "output_text" && content.Text != "" {
+				parts = append(parts, content.Text)
 			}
 		}
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, ""), nil
 	}
 	return "", ErrEmptyResponse
 }

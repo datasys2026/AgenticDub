@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"krillin-ai/config"
 	"krillin-ai/internal/deps"
 	"krillin-ai/internal/dto"
@@ -31,19 +32,25 @@ func (h Handler) StartSubtitleTask(c *gin.Context) {
 		log.GetLogger().Info("检测到配置更新，重新初始化服务")
 		deps.CheckDependency()
 		h.Service = service.NewService()
+		if h.Service == nil {
+			response.R(c, response.Response{
+				Error: -1,
+				Msg:   "服务初始化失败",
+				Data:  nil,
+			})
+			return
+		}
 		configUpdated = false
 	}
 
-	svc := h.Service
-	if taskConfig, ok, err := configForSubtitleTask(req); err != nil {
+	svc, err := serviceForSubtitleTask(h.Service, req)
+	if err != nil {
 		response.R(c, response.Response{
 			Error: -1,
 			Msg:   err.Error(),
 			Data:  nil,
 		})
 		return
-	} else if ok {
-		svc = service.NewServiceWithConfig(taskConfig)
 	}
 
 	data, err := svc.StartSubtitleTask(req)
@@ -60,6 +67,20 @@ func (h Handler) StartSubtitleTask(c *gin.Context) {
 		Msg:   "成功",
 		Data:  data,
 	})
+}
+
+func serviceForSubtitleTask(base *service.Service, req dto.StartVideoSubtitleTaskReq) (*service.Service, error) {
+	taskConfig, ok, err := configForSubtitleTask(req)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		if base == nil {
+			return nil, fmt.Errorf("服务未初始化")
+		}
+		return base, nil
+	}
+	return service.NewServiceWithConfig(taskConfig)
 }
 
 func configForSubtitleTask(req dto.StartVideoSubtitleTaskReq) (config.Config, bool, error) {
@@ -88,10 +109,26 @@ func (h Handler) GetSubtitleTask(c *gin.Context) {
 	if configUpdated {
 		log.GetLogger().Info("检测到配置更新，重新初始化服务")
 		h.Service = service.NewService()
+		if h.Service == nil {
+			response.R(c, response.Response{
+				Error: -1,
+				Msg:   "服务初始化失败",
+				Data:  nil,
+			})
+			return
+		}
 		configUpdated = false
 	}
 
 	svc := h.Service
+	if svc == nil {
+		response.R(c, response.Response{
+			Error: -1,
+			Msg:   "服务未初始化",
+			Data:  nil,
+		})
+		return
+	}
 	data, err := svc.GetTaskStatus(req)
 	if err != nil {
 		response.R(c, response.Response{

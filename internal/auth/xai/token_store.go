@@ -16,6 +16,8 @@ var (
 	ErrTokenExpired  = errors.New("xai oauth token expired")
 )
 
+const tokenExpiryLeeway = 5 * time.Minute
+
 type Token struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
@@ -25,7 +27,7 @@ type Token struct {
 }
 
 func (t Token) expired(now time.Time) bool {
-	return !t.ExpiresAt.IsZero() && !t.ExpiresAt.After(now)
+	return !t.ExpiresAt.IsZero() && !t.ExpiresAt.After(now.Add(tokenExpiryLeeway))
 }
 
 type TokenStore interface {
@@ -86,6 +88,9 @@ func parseToken(data []byte) (Token, error) {
 		return token, nil
 	}
 
+	// Hermes stores xAI OAuth credentials in auth.json. Prefer the credential
+	// pool because it records per-token health; fall back to provider tokens for
+	// older Hermes files.
 	var hermes struct {
 		ActiveProvider string `json:"active_provider"`
 		CredentialPool map[string][]struct {

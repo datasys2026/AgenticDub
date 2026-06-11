@@ -55,9 +55,6 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	if input.Voice == "" {
 		input.Voice = "Ryan"
 	}
-	if input.LLMProfile == "" {
-		input.LLMProfile = "external"
-	}
 	if input.STTProfile == "" {
 		input.STTProfile = "default"
 	}
@@ -66,10 +63,6 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 	if input.EmbedVideoType == "" {
 		input.EmbedVideoType = "none"
-	}
-
-	if _, err := config.ConfigForModelProfiles(config.Conf, input.LLMProfile, input.STTProfile, input.TTSProfile, input.Voice); err != nil {
-		return nil, TranslateVideoOutput{}, err
 	}
 
 	bilingual := 0
