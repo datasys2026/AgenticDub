@@ -3,12 +3,15 @@ package service
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
 	"go.uber.org/zap"
 
 	"krillin-ai/config"
+	"krillin-ai/internal/types"
 	"krillin-ai/log"
 )
 
@@ -68,5 +71,63 @@ func Test_splitOriginLongSentence(t *testing.T) {
 	fmt.Println("testText:", testText)
 	for i, sentence := range splitTextSentences {
 		fmt.Printf("Sentence %d: %s\n", i+1, sentence)
+	}
+}
+
+func TestSplitSrtTargetOnlyUsesTargetLanguageForTTS(t *testing.T) {
+	log.InitLogger()
+
+	taskDir := t.TempDir()
+	outputDir := filepath.Join(taskDir, "output")
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	bilingualPath := filepath.Join(taskDir, types.SubtitleTaskBilingualSrtFileName)
+	bilingualContent := `1
+00:00:00,000 --> 00:00:01,000
+Hello world
+你好世界
+
+2
+00:00:01,000 --> 00:00:02,000
+Good morning
+早安
+`
+	if err := os.WriteFile(bilingualPath, []byte(bilingualContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stepParam := &types.SubtitleTaskStepParam{
+		TaskId:               "task-123",
+		TaskBasePath:         taskDir,
+		BilingualSrtFilePath: bilingualPath,
+		SubtitleResultType:   types.SubtitleResultTypeTargetOnly,
+		OriginLanguage:       types.LanguageNameEnglish,
+		TargetLanguage:       types.LanguageNameTraditionalChinese,
+		UserUILanguage:       types.LanguageNameTraditionalChinese,
+	}
+
+	if err := splitSrt(stepParam); err != nil {
+		t.Fatalf("splitSrt failed: %v", err)
+	}
+
+	targetPath := filepath.Join(taskDir, types.SubtitleTaskTargetLanguageSrtFileName)
+	if stepParam.TtsSourceFilePath != targetPath {
+		t.Fatalf("expected TTS source target SRT %q, got %q", targetPath, stepParam.TtsSourceFilePath)
+	}
+	if got := subtitlePathForEmbed(stepParam); got != targetPath {
+		t.Fatalf("expected embed source target SRT %q, got %q", targetPath, got)
+	}
+
+	targetContent, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(targetContent), "Hello world") {
+		t.Fatalf("target SRT should not contain original English: %s", string(targetContent))
+	}
+	if !strings.Contains(string(targetContent), "你好世界") {
+		t.Fatalf("target SRT should contain translated Chinese: %s", string(targetContent))
 	}
 }

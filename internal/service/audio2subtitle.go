@@ -676,8 +676,12 @@ func splitSrt(stepParam *types.SubtitleTaskStepParam) error {
 		stepParam.SubtitleInfos = append(stepParam.SubtitleInfos, subtitleInfo)
 	}
 
-	// 供生成配音使用
-	stepParam.TtsSourceFilePath = stepParam.BilingualSrtFilePath
+	// 供生成配音使用：配音永遠使用目標語言，避免 target-only 任務誤讀雙語 SRT 的第一行原文。
+	if stepParam.SubtitleResultType == types.SubtitleResultTypeOriginOnly {
+		stepParam.TtsSourceFilePath = originLanguageSrtFilePath
+	} else {
+		stepParam.TtsSourceFilePath = targetLanguageSrtFilePath
+	}
 
 	log.GetLogger().Info("audioToSubtitle.splitSrt end", zap.Any("task id", stepParam.TaskId))
 	return nil

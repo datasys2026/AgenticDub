@@ -42,7 +42,7 @@ func TestBuildXAITTSURL(t *testing.T) {
 
 func TestXAIOAuthClientText2Speech(t *testing.T) {
 	var capturedAuth string
-	var capturedBody map[string]string
+	var capturedBody xaiTTSRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedAuth = r.Header.Get("Authorization")
 		if r.URL.Path != "/v1/tts" {
@@ -51,12 +51,12 @@ func TestXAIOAuthClientText2Speech(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
-		w.Header().Set("Content-Type", "audio/mpeg")
-		_, _ = w.Write([]byte("mp3-data"))
+		w.Header().Set("Content-Type", "audio/wav")
+		_, _ = w.Write([]byte("wav-data"))
 	}))
 	defer server.Close()
 
-	outputFile := filepath.Join(t.TempDir(), "speech.mp3")
+	outputFile := filepath.Join(t.TempDir(), "speech.wav")
 	client := NewXAIOAuthClient(server.URL, staticBearerTokenSource{token: "oauth-token"}, server.Client())
 	if err := client.Text2Speech("hello", "", outputFile); err != nil {
 		t.Fatalf("Text2Speech failed: %v", err)
@@ -64,21 +64,24 @@ func TestXAIOAuthClientText2Speech(t *testing.T) {
 	if capturedAuth != "Bearer oauth-token" {
 		t.Fatalf("expected bearer token, got %q", capturedAuth)
 	}
-	if capturedBody["text"] != "hello" {
-		t.Fatalf("expected text hello, got %q", capturedBody["text"])
+	if capturedBody.Text != "hello" {
+		t.Fatalf("expected text hello, got %q", capturedBody.Text)
 	}
-	if capturedBody["voice_id"] != DefaultXAIVoice {
-		t.Fatalf("expected default voice %q, got %q", DefaultXAIVoice, capturedBody["voice_id"])
+	if capturedBody.VoiceID != DefaultXAIVoice {
+		t.Fatalf("expected default voice %q, got %q", DefaultXAIVoice, capturedBody.VoiceID)
 	}
-	if capturedBody["language"] != DefaultXAILanguage {
-		t.Fatalf("expected default language %q, got %q", DefaultXAILanguage, capturedBody["language"])
+	if capturedBody.Language != DefaultXAILanguage {
+		t.Fatalf("expected default language %q, got %q", DefaultXAILanguage, capturedBody.Language)
+	}
+	if capturedBody.OutputFormat.Codec != "wav" || capturedBody.OutputFormat.SampleRate != 24000 {
+		t.Fatalf("expected 24kHz wav output format, got %#v", capturedBody.OutputFormat)
 	}
 
 	data, err := os.ReadFile(outputFile)
 	if err != nil {
 		t.Fatalf("read output file: %v", err)
 	}
-	if string(data) != "mp3-data" {
+	if string(data) != "wav-data" {
 		t.Fatalf("expected written audio data, got %q", string(data))
 	}
 }

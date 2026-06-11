@@ -103,18 +103,18 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 	}
 
 	stepParam := types.SubtitleTaskStepParam{
-		TaskId:                  taskId,
-		TaskPtr:                 taskPtr,
-		TaskBasePath:            taskBasePath,
-		Link:                    req.Url,
-		SubtitleResultType:      resultType,
-		EnableModalFilter:       req.ModalFilter == types.SubtitleTaskModalFilterYes,
-		EnableTts:               req.Tts == types.SubtitleTaskTtsYes,
-		TtsVoiceCode:            req.TtsVoiceCode,
-		VoiceCloneAudioUrl:      voiceCloneAudioUrl,
-		ReplaceWordsMap:         replaceWordsMap,
-		OriginLanguage:          types.StandardLanguageCode(req.OriginLanguage),
-		UserUILanguage:          types.StandardLanguageCode(req.Language),
+		TaskId:             taskId,
+		TaskPtr:            taskPtr,
+		TaskBasePath:       taskBasePath,
+		Link:               req.Url,
+		SubtitleResultType: resultType,
+		EnableModalFilter:  req.ModalFilter == types.SubtitleTaskModalFilterYes,
+		EnableTts:          req.Tts == types.SubtitleTaskTtsYes,
+		TtsVoiceCode:       req.TtsVoiceCode,
+		VoiceCloneAudioUrl: voiceCloneAudioUrl,
+		ReplaceWordsMap:    replaceWordsMap,
+		OriginLanguage:     types.StandardLanguageCode(req.OriginLanguage),
+		UserUILanguage:     types.StandardLanguageCode(req.Language),
 	}
 	targetLang := req.TargetLang
 	if targetLang == "繁體中文" {
@@ -172,11 +172,12 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			return
 		}
 
-		// HITL: Generate review.txt and wait for review
-		// Use bilingual_srt.srt which contains: line1=Chinese translation, line2=English original
+		// HITL: Generate review.txt and wait for review.
+		// bilingual_srt.srt contains line1=original, line2=target unless translation-on-top is requested.
 		bilingualSrtPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskBilingualSrtFileName)
 		hitlSvc := s.getHITLService()
-		doc, err := hitlSvc.CreateReviewFromBilingual(stepParam.TaskId, bilingualSrtPath, stepParam.TaskPtr.Title, string(stepParam.TargetLanguage))
+		targetOnTop := stepParam.SubtitleResultType == types.SubtitleResultTypeBilingualTranslationOnTop
+		doc, err := hitlSvc.CreateReviewFromBilingual(stepParam.TaskId, bilingualSrtPath, stepParam.TaskPtr.Title, string(stepParam.TargetLanguage), targetOnTop)
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask CreateReview err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed

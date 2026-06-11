@@ -311,8 +311,9 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 
 func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, withTts bool) error {
 	assPath := filepath.Join(stepParam.TaskBasePath, "formatted_subtitles.ass")
+	subtitlePath := subtitlePathForEmbed(stepParam)
 
-	if err := srtToAss(stepParam.BilingualSrtFilePath, assPath, isHorizontal, stepParam); err != nil {
+	if err := srtToAss(subtitlePath, assPath, isHorizontal, stepParam); err != nil {
 		log.GetLogger().Error("embedSubtitles srtToAss error", zap.Any("step param", stepParam), zap.Error(err))
 		return fmt.Errorf("embedSubtitles srtToAss error: %w", err)
 	}
@@ -355,6 +356,13 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 		return fmt.Errorf("embedSubtitles embed subtitle into video ffmpeg error: %w", err)
 	}
 	return nil
+}
+
+func subtitlePathForEmbed(stepParam *types.SubtitleTaskStepParam) string {
+	if stepParam.SubtitleResultType == types.SubtitleResultTypeTargetOnly {
+		return filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTargetLanguageSrtFileName)
+	}
+	return stepParam.BilingualSrtFilePath
 }
 
 func extractYouTubeID(url string) string {

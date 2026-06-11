@@ -404,7 +404,7 @@ func adjustAudioDuration(inputFile, outputFile, taskBasePath string, subtitleDur
 
 		f.Close()
 
-		cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c", "copy", outputFile)
+		cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", concatFile, "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", outputFile)
 		cmd.Stderr = os.Stderr
 		err = cmd.Run()
 		if err != nil {
@@ -479,7 +479,7 @@ func concatenateAudioFiles(audioFiles []string, outputFile, taskBasePath string)
 	defer os.Remove(listFile)
 
 	// outputFile 已经是完整路径
-	cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", outputFile)
+	cmd := exec.Command(storage.FfmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "pcm_s16le", "-ar", "24000", "-ac", "1", outputFile)
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }

@@ -59,10 +59,14 @@ func (c *XAIOAuthClient) Text2SpeechWithContext(ctx context.Context, text string
 		return err
 	}
 
-	reqBody, err := json.Marshal(map[string]string{
-		"text":     text,
-		"voice_id": voice,
-		"language": DefaultXAILanguage,
+	reqBody, err := json.Marshal(xaiTTSRequest{
+		Text:     text,
+		VoiceID:  voice,
+		Language: DefaultXAILanguage,
+		OutputFormat: xaiTTSOutputFormat{
+			Codec:      "wav",
+			SampleRate: 24000,
+		},
 	})
 	if err != nil {
 		return err
@@ -93,6 +97,18 @@ func (c *XAIOAuthClient) Text2SpeechWithContext(ctx context.Context, text string
 
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+type xaiTTSRequest struct {
+	Text         string             `json:"text"`
+	VoiceID      string             `json:"voice_id"`
+	Language     string             `json:"language"`
+	OutputFormat xaiTTSOutputFormat `json:"output_format"`
+}
+
+type xaiTTSOutputFormat struct {
+	Codec      string `json:"codec"`
+	SampleRate int    `json:"sample_rate"`
 }
 
 func buildXAITTSURL(baseURL string) string {
