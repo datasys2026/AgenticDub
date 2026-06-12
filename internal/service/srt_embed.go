@@ -290,7 +290,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				subtitleLines = append(subtitleLines, textLine)
 			}
 
-			if len(subtitleLines) < 2 {
+			if len(subtitleLines) == 0 {
 				continue
 			}
 			//var majorTextLanguage types.StandardLanguageCode
@@ -305,6 +305,20 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 			// ASS条目
 			startFormatted := formatTimestamp(startTime)
 			endFormatted := formatTimestamp(endTime)
+			if len(subtitleLines) == 1 {
+				maxWordLine := stepParam.MaxWordOneLine
+				if maxWordLine <= 0 {
+					maxWordLine = 12
+				}
+				chineseLines := splitChineseText(subtitleLines[0], maxWordLine)
+				cleanedLines := make([]string, 0, len(chineseLines))
+				for _, line := range chineseLines {
+					cleanedLines = append(cleanedLines, cleanSubtitleDisplayText(line))
+				}
+				combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s", strings.Join(cleanedLines, "\\N"))
+				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				continue
+			}
 			combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s\\N{\\rMinor}%s", cleanSubtitleDisplayText(subtitleLines[0]), cleanSubtitleDisplayText(subtitleLines[1]))
 			_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
 		}
@@ -422,26 +436,7 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 	cwd, _ := os.Getwd()
 	absAssPath := filepath.Join(cwd, assPath)
 
-	// Generate filename: YYYY-MM-DD_<video_id>_<type>_embed.mp4
-	now := time.Now()
-	dateStr := now.Format("2006-01-02")
-
-	// Extract video ID from URL or use task ID
-	videoID := filepath.Base(stepParam.TaskBasePath)
-	if strings.Contains(stepParam.Link, "youtube.com") || strings.Contains(stepParam.Link, "youtu.be") {
-		if id := extractYouTubeID(stepParam.Link); id != "" {
-			videoID = id
-		}
-	} else if strings.Contains(stepParam.Link, "local:") {
-		localPath := strings.TrimPrefix(stepParam.Link, "local:")
-		videoID = strings.TrimSuffix(filepath.Base(localPath), filepath.Ext(localPath))
-	}
-
-	fileType := "vertical"
-	if isHorizontal {
-		fileType = "horizontal"
-	}
-	outputFileName := fmt.Sprintf("%s_%s_%s_embed.mp4", dateStr, videoID, fileType)
+	outputFileName := buildEmbeddedVideoFileName(stepParam, isHorizontal, time.Now())
 
 	outputRelPath := filepath.Join("output", outputFileName)
 	outputPath := filepath.Join(cwd, outputRelPath)

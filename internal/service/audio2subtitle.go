@@ -32,6 +32,8 @@ const (
 	minReadableSubtitleDuration = 1.5
 	maxReadableSubtitleDuration = 4.5
 	targetSubtitleCharsPerSec   = 6.0
+	maxMatchedSubtitleDuration  = 30.0
+	maxSubtitleTimestampGap     = 30.0
 )
 
 func (s Service) audioToSubtitle(ctx context.Context, stepParam *types.SubtitleTaskStepParam) error {
@@ -543,6 +545,9 @@ func (s Service) audioToSrt(ctx context.Context, stepParam *types.SubtitleTaskSt
 			zap.Any("taskId", stepParam.TaskId), zap.Error(err))
 		return fmt.Errorf("audioToSubtitle audioToSrt merge BilingualFile err: %w", err)
 	}
+	if err = normalizeSrtFileTimings(bilingualFile); err != nil {
+		return fmt.Errorf("audioToSubtitle audioToSrt normalize BilingualFile err: %w", err)
+	}
 
 	//合并最终双语字幕 长中文+短英文
 	shortOriginMixedFile := fmt.Sprintf("%s/%s", stepParam.TaskBasePath, types.SubtitleTaskShortOriginMixedSrtFileName)
@@ -551,6 +556,9 @@ func (s Service) audioToSrt(ctx context.Context, stepParam *types.SubtitleTaskSt
 		log.GetLogger().Error("audioToSubtitle audioToSrt merge shortOriginMixedFile err",
 			zap.Any("taskId", stepParam.TaskId), zap.Error(err))
 		return fmt.Errorf("audioToSrt merge shortOriginMixedFile err: %w", err)
+	}
+	if err = normalizeSrtFileTimings(shortOriginMixedFile); err != nil {
+		return fmt.Errorf("audioToSrt normalize shortOriginMixedFile err: %w", err)
 	}
 	stepParam.ShortOriginMixedSrtFilePath = shortOriginMixedFile
 
@@ -561,6 +569,9 @@ func (s Service) audioToSrt(ctx context.Context, stepParam *types.SubtitleTaskSt
 		log.GetLogger().Error("audioToSubtitle audioToSrt mergeShortOriginFile err",
 			zap.Any("taskId", stepParam.TaskId), zap.Error(err))
 		return fmt.Errorf("audioToSrt mergeShortOriginFile err: %w", err)
+	}
+	if err = normalizeSrtFileTimings(shortOriginFile); err != nil {
+		return fmt.Errorf("audioToSrt normalize shortOriginFile err: %w", err)
 	}
 
 	// 供后续分割单语使用
@@ -747,6 +758,9 @@ func getSentenceTimestamps(words []types.Word, sentence string, lastTs float64, 
 		if endWordIndex-beginWordIndex == len(sentenceWords) {
 			srtSt.Start = beginWord.Start
 			srtSt.End = endWord.End
+			if !isUsableMatchedTiming(srtSt.Start, srtSt.End, thisLastTs) {
+				return srtSt, sentenceWords, 0, fmt.Errorf("getSentenceTimestamps invalid timestamp: start %.3f end %.3f", srtSt.Start, srtSt.End)
+			}
 			thisLastTs = endWord.End
 			return srtSt, sentenceWords, thisLastTs, nil
 		}
@@ -800,6 +814,9 @@ func getSentenceTimestamps(words []types.Word, sentence string, lastTs float64, 
 			srtSt.Start = thisLastTs
 		}
 		srtSt.End = endWord.End
+		if !isUsableMatchedTiming(srtSt.Start, srtSt.End, thisLastTs) {
+			return srtSt, sentenceWords, 0, fmt.Errorf("getSentenceTimestamps invalid timestamp: start %.3f end %.3f", srtSt.Start, srtSt.End)
+		}
 		if beginWord.Num != endWord.Num && endWord.End > thisLastTs {
 			thisLastTs = endWord.End
 		}
@@ -851,6 +868,9 @@ func getSentenceTimestamps(words []types.Word, sentence string, lastTs float64, 
 			srtSt.Start = thisLastTs
 		}
 		srtSt.End = endWord.End
+		if !isUsableMatchedTiming(srtSt.Start, srtSt.End, thisLastTs) {
+			return srtSt, readableSentenceWords, 0, fmt.Errorf("getSentenceTimestamps invalid timestamp: start %.3f end %.3f", srtSt.Start, srtSt.End)
+		}
 		if beginWord.Num != endWord.Num && endWord.End > thisLastTs {
 			thisLastTs = endWord.End
 		}
@@ -967,6 +987,30 @@ func jumpFindMaxIncreasingSubArray(words []types.Word) (int, int, []types.Word) 
 	return startIdx, endIdx, result
 }
 
+func isUsableMatchedTiming(start, end, lastTs float64) bool {
+	if end <= start {
+		return false
+	}
+	if end-start > maxMatchedSubtitleDuration {
+		return false
+	}
+	if lastTs > 0 && start-lastTs > maxSubtitleTimestampGap {
+		return false
+	}
+	return true
+}
+
+func appendShortOriginSrtBlock(blocks map[int][]util.SrtBlock, index int, start, end, tsOffset float64, text string) {
+	if end <= start {
+		return
+	}
+	blocks[index] = append(blocks[index], util.SrtBlock{
+		Index:                  index,
+		Timestamp:              fmt.Sprintf("%s --> %s", util.FormatTime(float32(start+tsOffset)), util.FormatTime(float32(end+tsOffset))),
+		OriginLanguageSentence: text,
+	})
+}
+
 func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, words []types.Word, segments []types.TranscriptionSegment, segmentIdx int, stepParam *types.SubtitleTaskStepParam) error {
 	if len(srtBlocks) == 0 {
 		return nil
@@ -999,7 +1043,7 @@ func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, wor
 			continue
 		}
 		sentenceTs, sentenceWords, ts, err := getSentenceTimestamps(words, srtBlock.OriginLanguageSentence, lastTs, stepParam.OriginLanguage)
-		if err != nil || ts < lastTs {
+		if err != nil || ts < lastTs || !isUsableMatchedTiming(sentenceTs.Start, sentenceTs.End, lastTs) {
 			continue
 		}
 		srtBlock.Timestamp = fmt.Sprintf("%s --> %s", util.FormatTime(float32(sentenceTs.Start+tsOffset)), util.FormatTime(float32(sentenceTs.End+tsOffset)))
@@ -1012,11 +1056,7 @@ func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, wor
 		)
 
 		if len(sentenceWords) <= stepParam.MaxWordOneLine {
-			shortOriginSrtMap[srtBlock.Index] = append(shortOriginSrtMap[srtBlock.Index], util.SrtBlock{
-				Index:                  srtBlock.Index,
-				Timestamp:              fmt.Sprintf("%s --> %s", util.FormatTime(float32(sentenceTs.Start+tsOffset)), util.FormatTime(float32(sentenceTs.End+tsOffset))),
-				OriginLanguageSentence: srtBlock.OriginLanguageSentence,
-			})
+			appendShortOriginSrtBlock(shortOriginSrtMap, srtBlock.Index, sentenceTs.Start, sentenceTs.End, tsOffset, srtBlock.OriginLanguageSentence)
 			lastTs = ts
 			continue
 		}
@@ -1069,11 +1109,7 @@ func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, wor
 			}
 
 			if i%thisLineWord == 0 && i > 1 {
-				shortOriginSrtMap[srtBlock.Index] = append(shortOriginSrtMap[srtBlock.Index], util.SrtBlock{
-					Index:                  srtBlock.Index,
-					Timestamp:              fmt.Sprintf("%s --> %s", util.FormatTime(float32(startWord.Start+tsOffset)), util.FormatTime(float32(endWord.End+tsOffset))),
-					OriginLanguageSentence: originSentence,
-				})
+				appendShortOriginSrtBlock(shortOriginSrtMap, srtBlock.Index, startWord.Start, endWord.End, tsOffset, originSentence)
 				originSentence = ""
 				nextStart = true
 			}
@@ -1081,11 +1117,7 @@ func generateSrtWithTimestamps(srtBlocks []*util.SrtBlock, tsOffset float64, wor
 		}
 
 		if originSentence != "" {
-			shortOriginSrtMap[srtBlock.Index] = append(shortOriginSrtMap[srtBlock.Index], util.SrtBlock{
-				Index:                  srtBlock.Index,
-				Timestamp:              fmt.Sprintf("%s --> %s", util.FormatTime(float32(startWord.Start+tsOffset)), util.FormatTime(float32(endWord.End+tsOffset))),
-				OriginLanguageSentence: originSentence,
-			})
+			appendShortOriginSrtBlock(shortOriginSrtMap, srtBlock.Index, startWord.Start, endWord.End, tsOffset, originSentence)
 		}
 		lastTs = ts
 	}
@@ -1310,6 +1342,39 @@ func parseSrtTimestampSeconds(timestamp string) (start, end float64, err error) 
 		return 0, 0, err
 	}
 	return start, end, nil
+}
+
+func normalizeSrtFileTimings(path string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
+	prevEnd := -1.0
+	for i, line := range lines {
+		start, end, err := parseSrtTimestampSeconds(line)
+		if err != nil {
+			continue
+		}
+
+		duration := end - start
+		if duration < minReadableSubtitleDuration {
+			duration = minReadableSubtitleDuration
+		}
+		if prevEnd >= 0 && start < prevEnd {
+			start = prevEnd + 0.05
+			end = start + duration
+		}
+		if end <= start {
+			end = start + minReadableSubtitleDuration
+		}
+
+		lines[i] = fmt.Sprintf("%s --> %s", util.FormatTime(float32(start)), util.FormatTime(float32(end)))
+		prevEnd = end
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
 }
 
 func parseSrtTimeSeconds(value string) (float64, error) {

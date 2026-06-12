@@ -73,6 +73,40 @@ func TestSrtToAssVerticalKeepsChineseBlockInSingleDialogue(t *testing.T) {
 	}
 }
 
+func TestSrtToAssHorizontalTargetOnlyWritesDialogue(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := filepath.Join(tmpDir, "input.srt")
+	output := filepath.Join(tmpDir, "output.ass")
+	content := `1
+00:00:00,000 --> 00:00:03,000
+這是一段單語中文字幕
+
+`
+	if err := os.WriteFile(input, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stepParam := &types.SubtitleTaskStepParam{
+		TargetLanguage: types.LanguageNameTraditionalChinese,
+		MaxWordOneLine: 12,
+	}
+	if err := srtToAss(input, output, true, stepParam); err != nil {
+		t.Fatalf("srtToAss failed: %v", err)
+	}
+
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ass := string(data)
+	if got := strings.Count(ass, "Dialogue:"); got != 1 {
+		t.Fatalf("expected one dialogue event for target-only horizontal subtitle, got %d:\n%s", got, ass)
+	}
+	if !strings.Contains(ass, `{\rMajor}`) {
+		t.Fatalf("expected target-only horizontal subtitle to use Major style:\n%s", ass)
+	}
+}
+
 func TestSrtToAssVerticalTreatsChineseWithLatinTokenAsMajor(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := filepath.Join(tmpDir, "input.srt")

@@ -190,3 +190,122 @@ func TestExtendReadableSubtitleTimingsExtendsFastShortBlock(t *testing.T) {
 		t.Fatalf("expected second block to extend for readable CPS, got %q", blocks[1].Timestamp)
 	}
 }
+
+func TestGetSentenceTimestampsRejectsInvalidEnglishMatch(t *testing.T) {
+	words := []types.Word{
+		{Num: 0, Text: "Nothing", Start: 10.0, End: 0},
+	}
+
+	_, _, _, err := getSentenceTimestamps(words, "Nothing.", 0, types.LanguageNameEnglish)
+	if err == nil {
+		t.Fatal("expected invalid timestamp match to return an error")
+	}
+}
+
+func TestTimestampGeneratorFallbackUsesPositiveDuration(t *testing.T) {
+	blocks := []*util.SrtBlock{
+		{
+			Index:                  1,
+			OriginLanguageSentence: "Nothing.",
+			TargetLanguageSentence: "沒有內容",
+		},
+		{
+			Index:                  2,
+			OriginLanguageSentence: "Still missing.",
+			TargetLanguageSentence: "仍然缺失",
+		},
+	}
+	words := []types.Word{
+		{Num: 0, Text: "Hello", Start: 10.0, End: 10.4},
+		{Num: 1, Text: "world", Start: 10.4, End: 10.8},
+	}
+
+	updated, err := NewTimestampGenerator().GenerateTimestamps(blocks, words, types.LanguageNameEnglish, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, block := range updated {
+		start, end, err := parseSrtTimestampSeconds(block.Timestamp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if end <= start {
+			t.Fatalf("expected positive fallback duration, got %q", block.Timestamp)
+		}
+	}
+}
+
+func TestTimestampGeneratorRejectsLargeForwardJump(t *testing.T) {
+	blocks := []*util.SrtBlock{
+		{
+			Index:                  1,
+			OriginLanguageSentence: "Hello",
+			TargetLanguageSentence: "你好",
+		},
+		{
+			Index:                  2,
+			OriginLanguageSentence: "Nothing",
+			TargetLanguageSentence: "沒事",
+		},
+	}
+	words := []types.Word{
+		{Num: 0, Text: "Hello", Start: 10.0, End: 10.4},
+		{Num: 1, Text: "Nothing", Start: 100.0, End: 100.5},
+	}
+
+	updated, err := NewTimestampGenerator().GenerateTimestamps(blocks, words, types.LanguageNameEnglish, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start, end, err := parseSrtTimestampSeconds(updated[1].Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if start >= 100 || end >= 100 {
+		t.Fatalf("expected large forward jump to use fallback timing, got %q", updated[1].Timestamp)
+	}
+	if end <= start {
+		t.Fatalf("expected fallback timing to remain positive, got %q", updated[1].Timestamp)
+	}
+}
+
+func TestNormalizeSrtFileTimingsRepairsBackwardBoundary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "merged.srt")
+	content := `1
+00:05:07,609 --> 00:05:09,109
+right
+
+2
+00:05:06,290 --> 00:05:07,790
+This
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := normalizeSrtFileTimings(path); err != nil {
+		t.Fatal(err)
+	}
+
+	normalized, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(normalized), "\n")
+	_, firstEnd, err := parseSrtTimestampSeconds(lines[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondStart, secondEnd, err := parseSrtTimestampSeconds(lines[5])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondStart <= firstEnd {
+		t.Fatalf("expected second subtitle to move after first, got %q", lines[5])
+	}
+	if secondEnd <= secondStart {
+		t.Fatalf("expected positive repaired duration, got %q", lines[5])
+	}
+}

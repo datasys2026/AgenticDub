@@ -21,6 +21,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var reviewPollInterval = 5 * time.Second
+
 func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.StartVideoSubtitleTaskResData, error) {
 	// 校验链接
 	if strings.Contains(req.Url, "youtube.com") {
@@ -35,11 +37,8 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			return nil, fmt.Errorf("链接不合法")
 		}
 	}
-	// 生成任务id
-	seperates := strings.Split(req.Url, "/")
-	taskId := fmt.Sprintf("%s_%s", util.SanitizePathName(string([]rune(strings.ReplaceAll(seperates[len(seperates)-1], " ", ""))[:16])), util.GenerateRandStringWithUpperLowerNum(4))
-	taskId = strings.ReplaceAll(taskId, "=", "") // 等于号影响ffmpeg处理
-	taskId = strings.ReplaceAll(taskId, "?", "") // 问号影响ffmpeg处理
+	// 生成可读任务 ID，便于从 tasks/ 目录直接识别来源与目标语言。
+	taskId := uniqueTaskID(buildTaskID(req, time.Now()))
 	// 构造任务所需参数
 	var resultType types.SubtitleResultType
 	// 根据入参选项确定要返回的字幕类型
@@ -116,13 +115,7 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		OriginLanguage:     types.StandardLanguageCode(req.OriginLanguage),
 		UserUILanguage:     types.StandardLanguageCode(req.Language),
 	}
-	targetLang := req.TargetLang
-	if targetLang == "繁體中文" {
-		targetLang = "zh_tw"
-	} else if targetLang == "簡體中文" {
-		targetLang = "zh_cn"
-	}
-	stepParam.TargetLanguage = types.StandardLanguageCode(targetLang)
+	stepParam.TargetLanguage = types.StandardLanguageCode(normalizeTargetLanguageCode(req.TargetLang))
 	embedSubtitleType := req.EmbedSubtitleVideoType
 	if embedSubtitleType == "" {
 		embedSubtitleType = "horizontal"
@@ -200,7 +193,14 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		log.GetLogger().Info("video subtitle task pending review", zap.String("taskId", taskId), zap.String("reviewPath", reviewPath))
 
 		// Wait for review (blocking loop)
-		s.waitForReview(&stepParam, reviewPath, ctx)
+		if err := s.waitForReview(&stepParam, reviewPath, ctx); err != nil {
+			log.GetLogger().Warn("video subtitle task stopped after review", zap.String("taskId", taskId), zap.Error(err))
+			if stepParam.TaskPtr.Status != types.SubtitleTaskStatusFailed {
+				stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
+				stepParam.TaskPtr.FailReason = err.Error()
+			}
+			return
+		}
 
 		// Review approved, continue with TTS
 		log.GetLogger().Info("video subtitle continue after review", zap.String("taskId", taskId))
@@ -273,18 +273,18 @@ func (s Service) getHITLService() hitl.ReviewService {
 	)
 }
 
-func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPath string, ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
+func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPath string, ctx context.Context) error {
+	ticker := time.NewTicker(reviewPollInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		case <-ticker.C:
 			task, ok := storage.SubtitleTasks.Load(stepParam.TaskId)
 			if !ok {
-				return
+				return fmt.Errorf("task %s not found while waiting for review", stepParam.TaskId)
 			}
 			taskPtr := task.(*types.SubtitleTask)
 
@@ -297,21 +297,21 @@ func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPat
 					if status.Status == hitl.StatusApproved {
 						if err := s.applyApprovedReview(stepParam, reviewPath); err != nil {
 							log.GetLogger().Error("waitForReview applyApprovedReview err", zap.Error(err))
-							return
+							return err
 						}
-						return
+						return nil
 					}
 					if status.Status == hitl.StatusRejected {
 						stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 						stepParam.TaskPtr.FailReason = status.RejectReason
-						return
+						return fmt.Errorf("review rejected: %s", status.RejectReason)
 					}
 				}
 			}
 
 			// Check if status changed from pending_review without a marker.
 			if taskPtr.Status == types.SubtitleTaskStatusProcessing && taskPtr.ProcessPct > 90 {
-				return
+				return nil
 			}
 		}
 	}
