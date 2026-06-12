@@ -21,6 +21,8 @@ func TestCleanPunctuation_Basic(t *testing.T) {
 		{"你好", "你好"},
 		{"   ", ""},
 		{"標點測試：這是測試；哈哈哈", "標點測試 這是測試 哈哈哈"},
+		{"彼得·斯坦伯格—OpenCL", "彼得 斯坦伯格 OpenCL"},
+		{"彼得・斯坦伯格･OpenCL", "彼得 斯坦伯格 OpenCL"},
 	}
 
 	for _, tt := range tests {
@@ -50,7 +52,7 @@ func TestCleanPunctuation_MultipleSpaces(t *testing.T) {
 }
 
 func TestCleanPunctuation_AllPunctuation(t *testing.T) {
-	input := "，。？！、；：\"\"''（）【】《》「」『』!?,."
+	input := "，。？！、；：\"\"''（）【】《》「」『』·・･•…—–-!?,."
 	result := hitl.CleanPunctuation(input)
 
 	if result != "" {

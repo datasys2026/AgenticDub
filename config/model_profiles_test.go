@@ -71,6 +71,9 @@ func TestConfigForModelProfiles_XAIOAuthSTTAndTTS(t *testing.T) {
 	if resolved.Tts.Openai.Model != "xai-tts" {
 		t.Fatalf("expected xai-tts model, got %q", resolved.Tts.Openai.Model)
 	}
+	if got := resolved.Tts.Voices; len(got) != 5 || got[0] != "eve" || got[4] != "leo" {
+		t.Fatalf("expected xAI TTS voices copied into resolved config, got %#v", got)
+	}
 }
 
 func TestValidateConfigUnsupportedLLMMessageIncludesXAIOAuth(t *testing.T) {

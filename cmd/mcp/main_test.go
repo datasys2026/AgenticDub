@@ -173,7 +173,7 @@ func TestTranslateVideoDoesNotDefaultLLMProfile(t *testing.T) {
 	}
 }
 
-func TestTranslateVideoDefaultsVoiceForXAITTSProfile(t *testing.T) {
+func TestTranslateVideoLeavesVoiceEmptyForServerRandomSelection(t *testing.T) {
 	originalServerURL := serverURL
 	originalHTTPClient := httpClient
 	originalConf := config.Conf
@@ -211,7 +211,7 @@ func TestTranslateVideoDefaultsVoiceForXAITTSProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateVideo failed: %v", err)
 	}
-	if got := payload["tts_voice_code"]; got != "eve" {
-		t.Fatalf("expected xAI default voice eve, got %#v", got)
+	if got := payload["tts_voice_code"]; got != "" {
+		t.Fatalf("expected empty voice for server-side random selection, got %#v", got)
 	}
 }

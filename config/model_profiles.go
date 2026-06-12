@@ -46,6 +46,7 @@ func ConfigForModelProfiles(base Config, llmProfile, sttProfile, ttsProfile, tts
 			resolved.Tts.Openai.ApiKey = resolveProfileAPIKey(profile, resolved.Tts.Openai.ApiKey)
 			resolved.Tts.Openai.Model = valueOrDefault(profile.Model, resolved.Tts.Openai.Model)
 		}
+		resolved.Tts.Voices = append([]string(nil), profile.Voices...)
 	}
 
 	return resolved, nil

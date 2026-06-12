@@ -77,8 +77,9 @@ func (s ReviewService) CreateReview(taskID, srtPath, videoTitle, language string
 		}
 
 		if state == 0 {
-			if n, err := fmt.Sscanf(line, "%d", new(int)); err == nil && n > 0 {
-				index = n
+			var parsedIndex int
+			if _, err := fmt.Sscanf(line, "%d", &parsedIndex); err == nil && parsedIndex > 0 {
+				index = parsedIndex
 				state = 1
 			}
 		} else if state == 1 {
@@ -147,8 +148,9 @@ func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, video
 		}
 
 		if state == 0 {
-			if n, err := fmt.Sscanf(line, "%d", new(int)); err == nil && n > 0 {
-				index = n
+			var parsedIndex int
+			if _, err := fmt.Sscanf(line, "%d", &parsedIndex); err == nil && parsedIndex > 0 {
+				index = parsedIndex
 				state = 1
 			}
 		} else if state == 1 {

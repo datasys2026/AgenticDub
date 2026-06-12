@@ -22,11 +22,12 @@ import (
 )
 
 type Service struct {
-	Transcriber      types.Transcriber
-	ChatCompleter    types.ChatCompleter
-	TtsClient        types.Ttser
-	OssClient        *aliyun.OssClient
-	VoiceCloneClient *aliyun.VoiceCloneClient
+	Transcriber        types.Transcriber
+	ChatCompleter      types.ChatCompleter
+	TtsClient          types.Ttser
+	TtsVoiceCandidates []string
+	OssClient          *aliyun.OssClient
+	VoiceCloneClient   *aliyun.VoiceCloneClient
 }
 
 func NewService() *Service {
@@ -120,12 +121,23 @@ func NewServiceWithConfig(conf config.Config) (*Service, error) {
 	}
 
 	return &Service{
-		Transcriber:      transcriber,
-		ChatCompleter:    chatCompleter,
-		TtsClient:        ttsClient,
-		OssClient:        aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
-		VoiceCloneClient: aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
+		Transcriber:        transcriber,
+		ChatCompleter:      chatCompleter,
+		TtsClient:          ttsClient,
+		TtsVoiceCandidates: ttsVoiceCandidates(conf),
+		OssClient:          aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
+		VoiceCloneClient:   aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
 	}, nil
+}
+
+func ttsVoiceCandidates(conf config.Config) []string {
+	if len(conf.Tts.Voices) > 0 {
+		return append([]string(nil), conf.Tts.Voices...)
+	}
+	if conf.Tts.Provider == "xai-oauth" {
+		return []string{"eve", "ara", "rex", "sal", "leo"}
+	}
+	return []string{"Ryan"}
 }
 
 func xaiOAuthTokenSource(tokenPath string) (*xaiauth.FileTokenSource, error) {

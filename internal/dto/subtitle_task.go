@@ -56,6 +56,7 @@ type GetVideoSubtitleTaskResData struct {
 	SubtitleInfo      []*SubtitleInfo `json:"subtitle_info"`
 	TargetLanguage    string          `json:"target_language"`
 	SpeechDownloadUrl string          `json:"speech_download_url"`
+	VideoDownloadUrl  string          `json:"video_download_url"`
 }
 
 type GetVideoSubtitleTaskRes struct {

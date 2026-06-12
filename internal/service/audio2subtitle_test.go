@@ -13,6 +13,7 @@ import (
 	"krillin-ai/config"
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
+	"krillin-ai/pkg/util"
 )
 
 func Test_isValidSplitContent(t *testing.T) {
@@ -129,5 +130,63 @@ Good morning
 	}
 	if !strings.Contains(string(targetContent), "你好世界") {
 		t.Fatalf("target SRT should contain translated Chinese: %s", string(targetContent))
+	}
+}
+
+func TestSmoothTranslatedItemsMergesShortTailFragments(t *testing.T) {
+	config.Conf.App.MaxSentenceLength = 70
+
+	items := []*TranslatedItem{
+		{OriginText: "Let me talk to you about some new", TranslatedText: "讓我跟你談談一些新的"},
+		{OriginText: "thing", TranslatedText: "事"},
+		{OriginText: "Good morning", TranslatedText: "早安"},
+	}
+
+	got := smoothTranslatedItems(items)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 smoothed items, got %d: %#v", len(got), got)
+	}
+	if got[0].OriginText != "Let me talk to you about some new thing" {
+		t.Fatalf("unexpected merged origin: %q", got[0].OriginText)
+	}
+	if got[0].TranslatedText != "讓我跟你談談一些新的事" {
+		t.Fatalf("unexpected merged translation: %q", got[0].TranslatedText)
+	}
+	if got[1].TranslatedText != "早安" {
+		t.Fatalf("standalone short subtitle should remain separate, got %q", got[1].TranslatedText)
+	}
+}
+
+func TestExtendReadableSubtitleTimingsExtendsFastShortBlock(t *testing.T) {
+	blocks := []*util.SrtBlock{
+		{
+			Index:                  1,
+			Timestamp:              "00:00:18,389 --> 00:00:18,770",
+			OriginLanguageSentence: "I, it's called OpenCL, and,",
+			TargetLanguageSentence: "我說的這個軟體叫做 OpenCL",
+		},
+		{
+			Index:                  2,
+			Timestamp:              "00:00:21,690 --> 00:00:22,610",
+			OriginLanguageSentence: "and I don't know if he realized how successful it's gonna be",
+			TargetLanguageSentence: "而且我不知道他當時有沒有意識到它會有多成功",
+		},
+	}
+
+	extendReadableSubtitleTimings(blocks)
+
+	start, end, err := parseSrtTimestampSeconds(blocks[0].Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duration := end - start; duration < 1.49 || duration > 1.51 {
+		t.Fatalf("expected first block to extend to about 1.5s, got %q", blocks[0].Timestamp)
+	}
+	start, end, err = parseSrtTimestampSeconds(blocks[1].Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duration := end - start; duration < 3.49 || duration > 3.51 {
+		t.Fatalf("expected second block to extend for readable CPS, got %q", blocks[1].Timestamp)
 	}
 }

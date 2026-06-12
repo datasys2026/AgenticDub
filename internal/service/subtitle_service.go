@@ -260,6 +260,7 @@ func (s Service) GetTaskStatus(req dto.GetVideoSubtitleTaskReq) (*dto.GetVideoSu
 		}),
 		TargetLanguage:    taskPtr.TargetLanguage,
 		SpeechDownloadUrl: taskPtr.SpeechDownloadUrl,
+		VideoDownloadUrl:  taskPtr.VideoDownloadUrl,
 	}, nil
 }
 
@@ -287,34 +288,17 @@ func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPat
 			}
 			taskPtr := task.(*types.SubtitleTask)
 
-			// Check if status changed from pending_review (e.g., approved by external API)
-			if taskPtr.Status == types.SubtitleTaskStatusProcessing && taskPtr.ProcessPct > 90 {
-				// Review was approved externally, continue
-				return
-			}
-
-			// Check for manual approval via status.json
+			// Check approval/rejection marker first. The HTTP handler may already
+			// move the task back to processing, but the edited review still must be applied.
 			statusPath := filepath.Join(stepParam.TaskBasePath, "status.json")
 			if data, err := os.ReadFile(statusPath); err == nil {
 				var status hitl.TaskStatus
 				if err := json.Unmarshal(data, &status); err == nil {
 					if status.Status == hitl.StatusApproved {
-						// Apply edited segments to SRT
-						hitlSvc := s.getHITLService()
-						finalSRTPath, err := hitlSvc.Approve(stepParam.TaskId, reviewPath)
-						if err != nil {
-							log.GetLogger().Error("waitForReview Approve err", zap.Error(err))
+						if err := s.applyApprovedReview(stepParam, reviewPath); err != nil {
+							log.GetLogger().Error("waitForReview applyApprovedReview err", zap.Error(err))
 							return
 						}
-						// Update stepParam for TTS to use final.srt
-						bilingualPath := filepath.Join(stepParam.TaskBasePath, "bilingual_srt.srt")
-						os.Rename(bilingualPath, bilingualPath+".bak")
-						// Copy final.srt as the new bilingual_srt for TTS
-						finalContent, _ := os.ReadFile(finalSRTPath)
-						os.WriteFile(bilingualPath, finalContent, 0644)
-						stepParam.BilingualSrtFilePath = bilingualPath
-						stepParam.TaskPtr.Status = types.SubtitleTaskStatusProcessing
-						stepParam.TaskPtr.ProcessPct = 91
 						return
 					}
 					if status.Status == hitl.StatusRejected {
@@ -324,6 +308,48 @@ func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPat
 					}
 				}
 			}
+
+			// Check if status changed from pending_review without a marker.
+			if taskPtr.Status == types.SubtitleTaskStatusProcessing && taskPtr.ProcessPct > 90 {
+				return
+			}
 		}
 	}
+}
+
+func (s Service) applyApprovedReview(stepParam *types.SubtitleTaskStepParam, reviewPath string) error {
+	targetPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTargetLanguageSrtFileName)
+	translatedPath := filepath.Join(stepParam.TaskBasePath, "translated.srt")
+	if _, err := os.Stat(translatedPath); os.IsNotExist(err) {
+		if err := copyFile(targetPath, translatedPath); err != nil {
+			return err
+		}
+	}
+
+	hitlSvc := s.getHITLService()
+	finalSRTPath, err := hitlSvc.Approve(stepParam.TaskId, reviewPath)
+	if err != nil {
+		return err
+	}
+
+	if stepParam.SubtitleResultType == types.SubtitleResultTypeTargetOnly {
+		if err := copyFile(finalSRTPath, targetPath); err != nil {
+			return err
+		}
+		stepParam.TtsSourceFilePath = targetPath
+	} else {
+		stepParam.TtsSourceFilePath = finalSRTPath
+	}
+
+	stepParam.TaskPtr.Status = types.SubtitleTaskStatusProcessing
+	stepParam.TaskPtr.ProcessPct = 91
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, content, 0644)
 }

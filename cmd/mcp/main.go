@@ -34,7 +34,7 @@ type TranslateVideoInput struct {
 	TargetLang     string `json:"target_lang" jsonschema:"target language (繁體中文 or 簡體中文)"`
 	Bilingual      bool   `json:"bilingual" jsonschema:"include original language subtitles"`
 	TTS            bool   `json:"tts" jsonschema:"generate TTS audio"`
-	Voice          string `json:"voice" jsonschema:"TTS voice name from selected TTS profile (aiark: Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee; xAI: eve, ara, rex, sal, leo)"`
+	Voice          string `json:"voice" jsonschema:"optional TTS voice name from selected TTS profile; omit to let the server randomly choose one voice for the whole task"`
 	LLMProfile     string `json:"llm_profile" jsonschema:"LLM profile name from list_model_profiles (fast, quality, external, light, grok)"`
 	STTProfile     string `json:"stt_profile" jsonschema:"STT profile name from list_model_profiles (default, xai)"`
 	TTSProfile     string `json:"tts_profile" jsonschema:"TTS profile name from list_model_profiles (default, xai)"`
@@ -57,9 +57,6 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 	if input.TTSProfile == "" {
 		input.TTSProfile = "default"
-	}
-	if input.Voice == "" {
-		input.Voice = defaultVoiceForTTSProfile(input.TTSProfile)
 	}
 	if input.EmbedVideoType == "" {
 		input.EmbedVideoType = "none"
@@ -121,17 +118,6 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 	}
 
 	return nil, TranslateVideoOutput{TaskID: taskID}, nil
-}
-
-func defaultVoiceForTTSProfile(profileName string) string {
-	profile, ok := config.Conf.Models.TTS[profileName]
-	if ok && profile.Provider == "xai-oauth" {
-		if len(profile.Voices) > 0 {
-			return profile.Voices[0]
-		}
-		return "eve"
-	}
-	return "Ryan"
 }
 
 type ListModelProfilesInput struct{}

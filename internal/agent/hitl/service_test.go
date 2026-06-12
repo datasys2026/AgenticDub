@@ -79,6 +79,9 @@ Good morning
 	if got := doc.Segments[0].Edited; got != "你好世界" {
 		t.Fatalf("expected edited Chinese, got %q", got)
 	}
+	if got := doc.Segments[1].Index; got != 2 {
+		t.Fatalf("expected second segment index 2, got %d", got)
+	}
 }
 
 func TestReviewService_CreateReviewFromBilingualTargetOnTop(t *testing.T) {

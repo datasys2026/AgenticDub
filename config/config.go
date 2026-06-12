@@ -77,6 +77,7 @@ type Tts struct {
 	Provider string                 `toml:"provider"`
 	Openai   OpenaiCompatibleConfig `toml:"openai"`
 	Aliyun   AliyunTtsConfig        `toml:"aliyun"`
+	Voices   []string               `toml:"voices"`
 }
 
 type OpenAiWhisper struct {

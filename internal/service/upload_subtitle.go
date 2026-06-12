@@ -38,5 +38,8 @@ func (s Service) uploadSubtitles(ctx context.Context, stepParam *types.SubtitleT
 	if stepParam.TtsResultFilePath != "" {
 		taskPtr.SpeechDownloadUrl = "/api/file/" + stepParam.TtsResultFilePath
 	}
+	if stepParam.EmbeddedVideoFilePath != "" {
+		taskPtr.VideoDownloadUrl = "/api/file/" + stepParam.EmbeddedVideoFilePath
+	}
 	return nil
 }
