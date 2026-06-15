@@ -233,6 +233,7 @@ func (s Service) splitTextAndTranslateV2(basePath, inputText string, originLang,
 	}
 
 	wg.Wait()
+	s.auditAndRepairTranslations(basePath, results, targetLang, id)
 	// close(errChan)
 
 	return results, nil

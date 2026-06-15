@@ -149,6 +149,7 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			stepParam.TaskPtr.FailReason = err.Error()
 			return
 		}
+		s.populateTaskTitle(ctx, &stepParam)
 		// 暂时不加视频信息
 		//err = s.getVideoInfo(ctx, &stepParam)
 		//if err != nil {
@@ -177,6 +178,7 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			stepParam.TaskPtr.FailReason = err.Error()
 			return
 		}
+		doc = s.auditAndSuggestReview(stepParam.TaskBasePath, doc, stepParam.TargetLanguage)
 
 		reviewPath := filepath.Join(stepParam.TaskBasePath, "review.txt")
 		err = hitlSvc.SaveReview(doc, reviewPath)

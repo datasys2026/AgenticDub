@@ -31,6 +31,21 @@ func TestSplitChineseTextDoesNotSplitLatinOrNumberTokens(t *testing.T) {
 	}
 }
 
+func TestSplitChineseTextDoesNotSplitSlashSeparatedTechnicalToken(t *testing.T) {
+	got := splitChineseText("我都會做一個 UI/UX 的測試 看看它們有多厲害", 12)
+	joined := strings.Join(got, "\n")
+	if strings.Contains(joined, "UI/\nUX") || strings.Contains(joined, "UI\n/UX") {
+		t.Fatalf("expected UI/UX token to stay intact, got %#v", got)
+	}
+}
+
+func TestSplitChineseTextAvoidsTooShortLeadingLine(t *testing.T) {
+	got := splitChineseText("Fable Five 來了 我得說", 12)
+	if len(got) != 2 || got[0] != "Fable Five" {
+		t.Fatalf("expected first line to avoid isolated Latin token, got %#v", got)
+	}
+}
+
 func TestCleanSubtitleDisplayTextRemovesInlinePunctuation(t *testing.T) {
 	got := cleanSubtitleDisplayText("所以彼得・斯坦伯格來了，他寫了一套軟體。")
 	want := "所以彼得 斯坦伯格來了 他寫了一套軟體"
@@ -39,7 +54,15 @@ func TestCleanSubtitleDisplayTextRemovesInlinePunctuation(t *testing.T) {
 	}
 }
 
-func TestSrtToAssVerticalKeepsChineseBlockInSingleDialogue(t *testing.T) {
+func TestCleanSubtitleDisplayTextRemovesSpeechTagsAndSpeakerPrefix(t *testing.T) {
+	got := cleanSubtitleDisplayText("[Speaker 1]: <emphasis>這裡很重要</emphasis> [pause] 請注意")
+	want := "這裡很重要 請注意"
+	if got != want {
+		t.Fatalf("cleanSubtitleDisplayText() = %q, want %q", got, want)
+	}
+}
+
+func TestSrtToAssVerticalSplitsLongChineseBlockIntoSingleLineDialogues(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := filepath.Join(tmpDir, "input.srt")
 	output := filepath.Join(tmpDir, "output.ass")
@@ -65,11 +88,11 @@ func TestSrtToAssVerticalKeepsChineseBlockInSingleDialogue(t *testing.T) {
 		t.Fatal(err)
 	}
 	ass := string(data)
-	if got := strings.Count(ass, "Dialogue:"); got != 1 {
-		t.Fatalf("expected one dialogue event for one subtitle block, got %d:\n%s", got, ass)
+	if got := strings.Count(ass, "Dialogue:"); got != 2 {
+		t.Fatalf("expected long subtitle block to be split into two dialogue events, got %d:\n%s", got, ass)
 	}
-	if !strings.Contains(ass, `\N`) {
-		t.Fatalf("expected ASS line break within one dialogue event:\n%s", ass)
+	if strings.Contains(ass, `\N`) {
+		t.Fatalf("expected no ASS line break inside dialogue events:\n%s", ass)
 	}
 }
 
@@ -104,6 +127,78 @@ func TestSrtToAssHorizontalTargetOnlyWritesDialogue(t *testing.T) {
 	}
 	if !strings.Contains(ass, `{\rMajor}`) {
 		t.Fatalf("expected target-only horizontal subtitle to use Major style:\n%s", ass)
+	}
+}
+
+func TestSrtToAssHorizontalSplitsLongTargetOnlySubtitleWithoutLineBreaks(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := filepath.Join(tmpDir, "input.srt")
+	output := filepath.Join(tmpDir, "output.ass")
+	content := `1
+00:00:00,000 --> 00:00:04,000
+這是一段很長的中文字幕需要重新切成多段
+
+`
+	if err := os.WriteFile(input, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stepParam := &types.SubtitleTaskStepParam{
+		TargetLanguage: types.LanguageNameTraditionalChinese,
+		MaxWordOneLine: 10,
+	}
+	if err := srtToAss(input, output, true, stepParam); err != nil {
+		t.Fatalf("srtToAss failed: %v", err)
+	}
+
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ass := string(data)
+	if got := strings.Count(ass, "Dialogue:"); got < 2 {
+		t.Fatalf("expected long target-only subtitle to be split, got %d:\n%s", got, ass)
+	}
+	if strings.Contains(ass, `\N`) {
+		t.Fatalf("expected no ASS line break for long target-only subtitle:\n%s", ass)
+	}
+}
+
+func TestSrtToAssHorizontalClampsOverlappingCues(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := filepath.Join(tmpDir, "input.srt")
+	output := filepath.Join(tmpDir, "output.ass")
+	content := `1
+00:00:00,000 --> 00:00:03,000
+第一段
+
+2
+00:00:02,000 --> 00:00:04,000
+第二段
+
+`
+	if err := os.WriteFile(input, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	stepParam := &types.SubtitleTaskStepParam{
+		TargetLanguage: types.LanguageNameTraditionalChinese,
+		MaxWordOneLine: 12,
+	}
+	if err := srtToAss(input, output, true, stepParam); err != nil {
+		t.Fatalf("srtToAss failed: %v", err)
+	}
+
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ass := string(data)
+	if !strings.Contains(ass, "Dialogue: 0,00:00:00.00,00:00:03.00") {
+		t.Fatalf("expected first cue to keep original timing:\n%s", ass)
+	}
+	if !strings.Contains(ass, "Dialogue: 0,00:00:03.00,00:00:04.00") {
+		t.Fatalf("expected second cue to start after first cue ends:\n%s", ass)
 	}
 }
 

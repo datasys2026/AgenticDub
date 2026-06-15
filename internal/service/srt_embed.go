@@ -138,7 +138,7 @@ func splitChineseText(text string, maxWordLine int) []string {
 	for _, token := range tokens {
 		tokenWidth := len([]rune(token))
 		targetWidth := (remainingWidth + remainingLines - 1) / remainingLines
-		if currentWidth > 0 && currentWidth+tokenWidth > targetWidth && len(lines) < lineCount-1 {
+		if currentWidth > 0 && currentWidth+tokenWidth > targetWidth && currentWidth >= minimumSubtitleSplitWidth(targetWidth) && len(lines) < lineCount-1 {
 			lines = append(lines, strings.TrimSpace(strings.Join(currentTokens, "")))
 			remainingWidth -= currentWidth
 			remainingLines--
@@ -161,6 +161,14 @@ func splitChineseText(text string, maxWordLine int) []string {
 	return lines
 }
 
+func minimumSubtitleSplitWidth(targetWidth int) int {
+	minWidth := (targetWidth*3 + 3) / 4
+	if minWidth < 4 {
+		return 4
+	}
+	return minWidth
+}
+
 func mixedSubtitleTokens(text string) []string {
 	runes := []rune(text)
 	tokens := make([]string, 0, len(runes))
@@ -180,7 +188,7 @@ func mixedSubtitleTokens(text string) []string {
 }
 
 func isProtectedSubtitleTokenRune(r rune) bool {
-	return r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r))
+	return r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/')
 }
 
 func subtitleTokensWidth(tokens []string) int {
@@ -253,6 +261,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 
 	if isHorizontal {
 		_, _ = assFile.WriteString(types.AssHeaderHorizontal)
+		lastEndTime := time.Duration(0)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
@@ -280,6 +289,8 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				log.GetLogger().Error("srtToAss parseSrtTime error", zap.Error(err))
 				return fmt.Errorf("srtToAss parseSrtTime error: %w", err)
 			}
+			startTime, endTime = clampSubtitleDisplayInterval(startTime, endTime, lastEndTime)
+			lastEndTime = endTime
 
 			var subtitleLines []string
 			for scanner.Scan() {
@@ -302,29 +313,24 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 
 			//majorLine := strings.Join(splitMajorTextInHorizontal(subtitleLines[0], majorTextLanguage, stepParam.MaxWordOneLine), "      \\N")
 
-			// ASS条目
-			startFormatted := formatTimestamp(startTime)
-			endFormatted := formatTimestamp(endTime)
 			if len(subtitleLines) == 1 {
 				maxWordLine := stepParam.MaxWordOneLine
 				if maxWordLine <= 0 {
 					maxWordLine = 12
 				}
-				chineseLines := splitChineseText(subtitleLines[0], maxWordLine)
-				cleanedLines := make([]string, 0, len(chineseLines))
-				for _, line := range chineseLines {
-					cleanedLines = append(cleanedLines, cleanSubtitleDisplayText(line))
-				}
-				combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s", strings.Join(cleanedLines, "\\N"))
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				writeSingleLineDialogueEvents(assFile, startTime, endTime, "Major", "{\\an2}{\\rMajor}", splitDisplayTextForSingleLine(subtitleLines[0], maxWordLine))
 				continue
 			}
+			// ASS条目
+			startFormatted := formatTimestamp(startTime)
+			endFormatted := formatTimestamp(endTime)
 			combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s\\N{\\rMinor}%s", cleanSubtitleDisplayText(subtitleLines[0]), cleanSubtitleDisplayText(subtitleLines[1]))
 			_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
 		}
 	} else {
 		// TODO 竖屏拆分调优
 		_, _ = assFile.WriteString(types.AssHeaderVertical)
+		lastEndTime := time.Duration(0)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
@@ -349,6 +355,8 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 			if err != nil {
 				return err
 			}
+			startTime, endTime = clampSubtitleDisplayInterval(startTime, endTime, lastEndTime)
+			lastEndTime = endTime
 
 			var content string
 			scanner.Scan()
@@ -364,33 +372,76 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				if maxWordLine <= 0 {
 					maxWordLine = 12
 				}
-				chineseLines := splitChineseText(content, maxWordLine)
-				cleanedLines := make([]string, 0, len(chineseLines))
-				for _, line := range chineseLines {
-					cleanedLines = append(cleanedLines, cleanSubtitleDisplayText(line))
-				}
-				startFormatted := formatTimestamp(startTime)
-				endFormatted := formatTimestamp(startTime + totalTime)
-				combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s", strings.Join(cleanedLines, "\\N"))
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				writeSingleLineDialogueEvents(assFile, startTime, startTime+totalTime, "Major", "{\\an2}{\\rMajor}", splitDisplayTextForSingleLine(content, maxWordLine))
 			} else {
 				// 处理英文字幕
-				startFormatted := formatTimestamp(startTime)
-				endFormatted := formatTimestamp(endTime)
-				cleanedText := cleanSubtitleDisplayText(content)
-				combinedText := fmt.Sprintf("{\\an2}{\\rMinor}%s", cleanedText)
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Minor,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				maxWordLine := stepParam.MaxWordOneLine
+				if maxWordLine <= 0 {
+					maxWordLine = 12
+				}
+				writeSingleLineDialogueEvents(assFile, startTime, endTime, "Minor", "{\\an2}{\\rMinor}", splitDisplayTextForSingleLine(content, maxWordLine))
 			}
 		}
 	}
 	return nil
 }
 
+func splitDisplayTextForSingleLine(text string, maxWordLine int) []string {
+	cleanedText := cleanSubtitleDisplayText(text)
+	if cleanedText == "" {
+		return nil
+	}
+	return splitChineseText(cleanedText, maxWordLine)
+}
+
+func writeSingleLineDialogueEvents(assFile *os.File, startTime, endTime time.Duration, style, prefix string, lines []string) {
+	cleanedLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = cleanSubtitleDisplayText(line)
+		if line != "" {
+			cleanedLines = append(cleanedLines, line)
+		}
+	}
+	if len(cleanedLines) == 0 {
+		return
+	}
+
+	duration := endTime - startTime
+	if duration <= 0 {
+		duration = 100 * time.Millisecond
+	}
+	cursor := startTime
+	for i, line := range cleanedLines {
+		segmentEnd := endTime
+		if i < len(cleanedLines)-1 {
+			segmentEnd = startTime + time.Duration(int64(duration)*int64(i+1)/int64(len(cleanedLines)))
+			if segmentEnd <= cursor {
+				segmentEnd = cursor + 100*time.Millisecond
+			}
+		}
+		combinedText := fmt.Sprintf("%s%s", prefix, line)
+		_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,%s,,0,0,0,,%s\n", formatTimestamp(cursor), formatTimestamp(segmentEnd), style, combinedText))
+		cursor = segmentEnd
+	}
+}
+
 var subtitleDisplayPunctuationRegex = regexp.MustCompile(`[，。？！、；：""''（）【】《》「」『』·・･•…—–\-!?,.\:\;\"\'\(\)\[\]\<\>]+`)
 
 func cleanSubtitleDisplayText(text string) string {
+	text = stripSpeechTagsFromDisplay(text)
+	_, text = splitSpeakerPrefix(text)
 	text = subtitleDisplayPunctuationRegex.ReplaceAllString(text, " ")
 	return strings.Join(strings.Fields(text), " ")
+}
+
+func clampSubtitleDisplayInterval(startTime, endTime, lastEndTime time.Duration) (time.Duration, time.Duration) {
+	if startTime < lastEndTime {
+		startTime = lastEndTime
+	}
+	if endTime <= startTime {
+		endTime = startTime + 100*time.Millisecond
+	}
+	return startTime, endTime
 }
 
 func isMajorSubtitleContent(content string, language types.StandardLanguageCode) bool {

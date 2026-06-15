@@ -88,11 +88,26 @@ func TestBuildEmbeddedVideoFileNameUsesReadableParts(t *testing.T) {
 	}
 
 	got := buildEmbeddedVideoFileName(stepParam, true, time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC))
-	want := "youtube_tSg3FAdWvzI_claude-fable-5-ui-ux-one-shots_zh_tw_horizontal_dubbed_2026-06-12.mp4"
+	want := "claude-fable-5-ui-ux-one-shots_youtube-tSg3FAdWvzI_zh_tw_horizontal_dubbed_2026-06-12.mp4"
 	if got != want {
 		t.Fatalf("buildEmbeddedVideoFileName() = %q, want %q", got, want)
 	}
 	if strings.Contains(got, "?") || strings.Contains(got, " ") {
 		t.Fatalf("filename should be shell and URL friendly, got %q", got)
+	}
+}
+
+func TestBuildEmbeddedVideoFileNameFallsBackToSourceWhenTitleMissing(t *testing.T) {
+	stepParam := &types.SubtitleTaskStepParam{
+		Link:           "https://www.youtube.com/watch?v=tSg3FAdWvzI",
+		TargetLanguage: types.LanguageNameTraditionalChinese,
+		EnableTts:      true,
+		TaskPtr:        &types.SubtitleTask{},
+	}
+
+	got := buildEmbeddedVideoFileName(stepParam, true, time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC))
+	want := "youtube_tSg3FAdWvzI_zh_tw_horizontal_dubbed_2026-06-12.mp4"
+	if got != want {
+		t.Fatalf("buildEmbeddedVideoFileName() = %q, want %q", got, want)
 	}
 }

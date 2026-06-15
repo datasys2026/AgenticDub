@@ -15,11 +15,29 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
+
+const (
+	defaultInterpreterDelaySeconds = 0.8
+	defaultDubMinGapSeconds        = 0.12
+)
+
+type dubSpeechTiming struct {
+	OriginalStart    float64
+	OriginalEnd      float64
+	Start            float64
+	End              float64
+	AudioDuration    float64
+	PrecedingSilence float64
+}
+
+type speakerVoiceAssignment struct {
+	SpeakerID string `json:"speaker_id"`
+	VoiceID   string `json:"voice_id"`
+}
 
 // 输入中文字幕，生成配音
 func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleTaskStepParam) error {
@@ -34,7 +52,6 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 	}
 
 	var audioFiles []string
-	var currentTime time.Time
 
 	// 创建文件记录音频的开始和结束时间
 	durationDetailFile, err := os.Create(filepath.Join(stepParam.TaskBasePath, types.TtsAudioDurationDetailsFileName))
@@ -56,98 +73,54 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 		}
 		voiceCode = code
 	}
+	voiceAssignments := buildSpeakerVoiceAssignments(subtitles, voiceCode)
+	if err := writeSpeakerVoiceAssignments(stepParam.TaskBasePath, voiceAssignments); err != nil {
+		log.GetLogger().Warn("srtFileToSpeech write speaker voice assignments failed", zap.String("task id", stepParam.TaskId), zap.Error(err))
+	}
 	log.GetLogger().Info("srtFileToSpeech selected TTS voice", zap.String("task id", stepParam.TaskId), zap.String("voice", voiceCode), zap.Bool("explicit", strings.TrimSpace(stepParam.TtsVoiceCode) != ""))
 
 	// 并发处理TTS转换
-	err = s.processSubtitlesConcurrently(subtitles, voiceCode, stepParam)
+	err = s.processSubtitlesConcurrently(subtitles, voiceAssignments, stepParam)
 	if err != nil {
 		log.GetLogger().Error("srtFileToSpeech processSubtitlesConcurrently error", zap.Any("stepParam", stepParam), zap.Error(err))
 		return fmt.Errorf("srtFileToSpeech processSubtitlesConcurrently error: %w", err)
 	}
 
+	dubTimings, err := buildInterpreterDubTimings(subtitles, stepParam.TaskBasePath)
+	if err != nil {
+		log.GetLogger().Error("srtFileToSpeech buildInterpreterDubTimings error", zap.Any("stepParam", stepParam), zap.Error(err))
+		return fmt.Errorf("srtFileToSpeech buildInterpreterDubTimings error: %w", err)
+	}
+
 	for i, sub := range subtitles {
 		outputFile := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("subtitle_%d.wav", i+1))
+		timing := dubTimings[i]
 
-		// Step 3: 调整音频时长
-		startTime, _, duration, trailingGap, err := subtitleSpeechTiming(subtitles, i)
-		if err != nil {
-			log.GetLogger().Error("srtFileToSpeech subtitleSpeechTiming error", zap.Any("stepParam", stepParam), zap.Any("num", i+1), zap.Error(err))
-			return fmt.Errorf("srtFileToSpeech subtitleSpeechTiming error: %w", err)
-		}
-		if i == 0 {
-			// 如果第一条字幕不是从00:00开始，增加静音帧
-			silenceDuration := startTime.Sub(srtZeroTime()).Seconds()
-			if silenceDuration > 0.01 {
-				silenceFilePath := filepath.Join(stepParam.TaskBasePath, "silence_0.wav")
-				err := newGenerateSilenceWithSampleRate(silenceFilePath, silenceDuration, 24000)
-				if err != nil {
-					log.GetLogger().Error("srtFileToSpeech newGenerateSilence error", zap.Any("stepParam", stepParam), zap.Error(err))
-					return fmt.Errorf("srtFileToSpeech newGenerateSilence error: %w", err)
-				}
-				audioFiles = append(audioFiles, silenceFilePath)
-
-				// 计算静音帧的结束时间
-				silenceEndTime := currentTime.Add(time.Duration(silenceDuration*1000) * time.Millisecond)
-				durationDetailFile.WriteString(fmt.Sprintf("Silence: start=%s, end=%s\n", currentTime.Format("15:04:05,000"), silenceEndTime.Format("15:04:05,000")))
-				currentTime = silenceEndTime
+		if timing.PrecedingSilence > 0.01 {
+			silenceFilePath := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("silence_before_%d.wav", i+1))
+			if err := newGenerateSilenceWithSampleRate(silenceFilePath, timing.PrecedingSilence, 24000); err != nil {
+				log.GetLogger().Error("srtFileToSpeech generate interpreter silence error", zap.Any("stepParam", stepParam), zap.Any("num", i+1), zap.Error(err))
+				return fmt.Errorf("srtFileToSpeech generate interpreter silence error: %w", err)
 			}
+			audioFiles = append(audioFiles, silenceFilePath)
 		}
 
-		adjustedFile := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("adjusted_%d.wav", i+1))
-		err = adjustAudioDuration(outputFile, adjustedFile, stepParam.TaskBasePath, duration)
-		if err != nil {
-			log.GetLogger().Error("srtFileToSpeech adjustAudioDuration error", zap.Any("stepParam", stepParam), zap.Any("num", i+1), zap.Error(err))
-			return fmt.Errorf("srtFileToSpeech adjustAudioDuration error: %w", err)
-		}
-
-		audioFiles = append(audioFiles, adjustedFile)
-		if trailingGap > 0.01 {
-			gapFile := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("gap_after_%d.wav", i+1))
-			if err := newGenerateSilenceWithSampleRate(gapFile, trailingGap, 24000); err != nil {
-				log.GetLogger().Error("srtFileToSpeech generate trailing silence error", zap.Any("stepParam", stepParam), zap.Any("num", i+1), zap.Error(err))
-				return fmt.Errorf("srtFileToSpeech generate trailing silence error: %w", err)
-			}
-			audioFiles = append(audioFiles, gapFile)
-		}
-
-		// 计算音频的实际时长
-		audioDuration, err := util.GetAudioDuration(adjustedFile)
-		if err != nil {
-			log.GetLogger().Error("srtFileToSpeech GetAudioDuration error", zap.Any("stepParam", stepParam), zap.Any("num", i+1), zap.Error(err))
-			return fmt.Errorf("srtFileToSpeech GetAudioDuration error: %w", err)
-		}
-
-		// 取得 TTS 生成前的原始音訊時長
-		rawAudioDuration, _ := util.GetAudioDuration(outputFile)
-
-		// 计算音频的结束时间
-		audioEndTime := currentTime.Add(time.Duration(audioDuration*1000) * time.Millisecond)
-
-		// 写入详细 log
-		// 格式：[id] 原文時間=%.3fs | 翻譯文字=%.20s | TTS時間=%.3fs | 調整=gap(前,後)/speed=x | 最終=%.3fs
-		adjustment := ""
-		if rawAudioDuration < duration {
-			gap := duration - rawAudioDuration
-			front := gap * 0.3
-			back := gap * 0.7
-			adjustment = fmt.Sprintf("gap(%.3f+%.3f)", front, back)
-		} else if rawAudioDuration > duration {
-			speed := rawAudioDuration / duration
-			adjustment = fmt.Sprintf("speed=%.2fx", speed)
-		} else {
-			adjustment = "none"
-		}
+		audioFiles = append(audioFiles, outputFile)
 
 		textPreview := sub.Text
 		if len(textPreview) > 25 {
 			textPreview = textPreview[:25] + "..."
 		}
-		durationDetailFile.WriteString(fmt.Sprintf("[%d] 原文時間=%.3fs | 翻譯=[%s] | TTS=%.3fs | 調整=%s | 最終=%.3fs\n",
-			i+1, duration, textPreview, rawAudioDuration, adjustment, audioDuration))
-		if trailingGap > 0.01 {
-			durationDetailFile.WriteString(fmt.Sprintf("[%d] 句後靜音=%.3fs\n", i+1, trailingGap))
+		originalDuration := timing.OriginalEnd - timing.OriginalStart
+		durationDetailFile.WriteString(fmt.Sprintf("[%d] 原文=%.3f-%.3f(%.3fs) | 配音=%.3f-%.3f | 延遲=%.3fs | 前置靜音=%.3fs | TTS自然長度=%.3fs | 翻譯=[%s]\n",
+			i+1, timing.OriginalStart, timing.OriginalEnd, originalDuration, timing.Start, timing.End, timing.Start-timing.OriginalStart, timing.PrecedingSilence, timing.AudioDuration, textPreview))
+	}
+
+	if stepParam.SubtitleResultType == types.SubtitleResultTypeTargetOnly {
+		if err := writeSRTWithDubTimings(stepParam.TtsSourceFilePath, subtitles, dubTimings); err != nil {
+			log.GetLogger().Error("srtFileToSpeech writeSRTWithDubTimings error", zap.Any("stepParam", stepParam), zap.Error(err))
+			return fmt.Errorf("srtFileToSpeech writeSRTWithDubTimings error: %w", err)
 		}
-		currentTime = audioEndTime
 	}
 
 	// Step 6: 拼接所有音频文件
@@ -173,59 +146,37 @@ func (s Service) srtFileToSpeech(ctx context.Context, stepParam *types.SubtitleT
 	return nil
 }
 
-func (s Service) processSubtitlesConcurrently(subtitles []types.SrtSentenceWithStrTime, voiceCode string, stepParam *types.SubtitleTaskStepParam) error {
+func (s Service) processSubtitlesConcurrently(subtitles []types.SrtSentenceWithStrTime, voiceAssignments map[string]string, stepParam *types.SubtitleTaskStepParam) error {
 	// 创建一个结果数组来存储每个字幕的处理结果
 	type processingResult struct {
 		index int
 		err   error
 	}
 
-	maxConcurrency := 1 // 降低并发数以避免 GPU 竞争
-	semaphore := make(chan struct{}, maxConcurrency)
-	var wg sync.WaitGroup
-	resultCh := make(chan processingResult, len(subtitles))
-
-	// 并发生成所有音频文件
-	for i, sub := range subtitles {
-		wg.Add(1)
-		go func(index int, subtitle types.SrtSentenceWithStrTime) {
-			defer wg.Done()
-
-			// 获取信号量
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			outputFile := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("subtitle_%d.wav", index+1))
-			err := s.TtsClient.Text2Speech(subtitle.Text, voiceCode, outputFile)
-			if err != nil {
-				log.GetLogger().Error("processSubtitlesConcurrently Text2Speech error",
-					zap.Any("index", index+1),
-					zap.String("text", subtitle.Text),
-					zap.Error(err))
-				resultCh <- processingResult{index: index, err: fmt.Errorf("subtitle %d TTS error: %w", index+1, err)}
-				return
-			}
-
-			// 成功处理
-			resultCh <- processingResult{index: index, err: nil}
-		}(i, sub)
-	}
-
-	// 等待所有goroutine完成
-	wg.Wait()
-	close(resultCh)
-
-	// 收集所有结果并统计错误
 	results := make([]processingResult, len(subtitles))
-	errorCount := 0
 	var firstError error
-
-	for result := range resultCh {
-		results[result.index] = result
-		if result.err != nil {
+	errorCount := 0
+	for index, subtitle := range subtitles {
+		outputFile := filepath.Join(stepParam.TaskBasePath, fmt.Sprintf("subtitle_%d.wav", index+1))
+		speakerID, displayText := splitSpeakerPrefix(subtitle.Text)
+		voiceCode := voiceAssignments[speakerID]
+		if voiceCode == "" {
+			voiceCode = voiceAssignments[defaultSpeakerID]
+		}
+		speechText := buildTTSSpeechText(displayText)
+		err := s.TtsClient.Text2Speech(speechText, voiceCode, outputFile)
+		results[index] = processingResult{index: index, err: err}
+		if err != nil {
+			log.GetLogger().Error("processSubtitlesConcurrently Text2Speech error",
+				zap.Any("index", index+1),
+				zap.String("text", displayText),
+				zap.String("speaker", speakerID),
+				zap.String("voice", voiceCode),
+				zap.Error(err))
+			results[index].err = fmt.Errorf("subtitle %d TTS error: %w", index+1, err)
 			errorCount++
 			if firstError == nil {
-				firstError = result.err
+				firstError = results[index].err
 			}
 		}
 	}
@@ -371,6 +322,81 @@ func subtitleSpeechTiming(subtitles []types.SrtSentenceWithStrTime, index int) (
 		}
 	}
 	return startTime, endTime, duration, trailingGap, nil
+}
+
+func buildInterpreterDubTimings(subtitles []types.SrtSentenceWithStrTime, taskBasePath string) ([]dubSpeechTiming, error) {
+	audioDurations := make([]float64, len(subtitles))
+	for i := range subtitles {
+		outputFile := filepath.Join(taskBasePath, fmt.Sprintf("subtitle_%d.wav", i+1))
+		duration, err := util.GetAudioDuration(outputFile)
+		if err != nil {
+			return nil, fmt.Errorf("get TTS audio duration for subtitle %d: %w", i+1, err)
+		}
+		audioDurations[i] = duration
+	}
+	return buildInterpreterDubTimingsFromDurations(subtitles, audioDurations, defaultInterpreterDelaySeconds, defaultDubMinGapSeconds)
+}
+
+func buildInterpreterDubTimingsFromDurations(subtitles []types.SrtSentenceWithStrTime, audioDurations []float64, delaySeconds, minGapSeconds float64) ([]dubSpeechTiming, error) {
+	if len(subtitles) != len(audioDurations) {
+		return nil, fmt.Errorf("subtitle count %d does not match audio duration count %d", len(subtitles), len(audioDurations))
+	}
+	timings := make([]dubSpeechTiming, len(subtitles))
+	cursor := 0.0
+	for i, subtitle := range subtitles {
+		startTime, err := parseSRTClock(subtitle.Start)
+		if err != nil {
+			return nil, err
+		}
+		endTime, err := parseSRTClock(subtitle.End)
+		if err != nil {
+			return nil, err
+		}
+		if !endTime.After(startTime) {
+			return nil, fmt.Errorf("subtitle end must be after start: %s --> %s", subtitle.Start, subtitle.End)
+		}
+
+		originalStart := startTime.Sub(srtZeroTime()).Seconds()
+		originalEnd := endTime.Sub(srtZeroTime()).Seconds()
+		audioDuration := audioDurations[i]
+		if audioDuration <= 0 {
+			audioDuration = originalEnd - originalStart
+		}
+
+		desiredStart := originalStart + delaySeconds
+		if i > 0 && desiredStart < cursor+minGapSeconds {
+			desiredStart = cursor + minGapSeconds
+		}
+		precedingSilence := desiredStart - cursor
+		if precedingSilence < 0 {
+			precedingSilence = 0
+		}
+
+		timings[i] = dubSpeechTiming{
+			OriginalStart:    originalStart,
+			OriginalEnd:      originalEnd,
+			Start:            desiredStart,
+			End:              desiredStart + audioDuration,
+			AudioDuration:    audioDuration,
+			PrecedingSilence: precedingSilence,
+		}
+		cursor = timings[i].End
+	}
+	return timings, nil
+}
+
+func writeSRTWithDubTimings(path string, subtitles []types.SrtSentenceWithStrTime, timings []dubSpeechTiming) error {
+	if len(subtitles) != len(timings) {
+		return fmt.Errorf("subtitle count %d does not match timing count %d", len(subtitles), len(timings))
+	}
+	var builder strings.Builder
+	for i, subtitle := range subtitles {
+		builder.WriteString(fmt.Sprintf("%d\n", i+1))
+		builder.WriteString(fmt.Sprintf("%s --> %s\n", util.FormatTime(float32(timings[i].Start)), util.FormatTime(float32(timings[i].End))))
+		builder.WriteString(strings.TrimSpace(subtitle.Text))
+		builder.WriteString("\n\n")
+	}
+	return os.WriteFile(path, []byte(builder.String()), 0644)
 }
 
 func parseSRTClock(value string) (time.Time, error) {

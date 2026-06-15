@@ -67,15 +67,22 @@ func buildEmbeddedVideoFileName(stepParam *types.SubtitleTaskStepParam, isHorizo
 		title = slugifyNamePart(stepParam.TaskPtr.Title)
 	}
 
-	parts := []string{
-		videoSourceName(stepParam.Link),
-		videoSourceID(stepParam.Link),
-		title,
+	sourceName := videoSourceName(stepParam.Link)
+	sourceID := videoSourceID(stepParam.Link)
+	sourceRef := strings.Join(nonEmptyNameParts(sourceName, sourceID), "-")
+
+	nameParts := []string{}
+	if title != "" {
+		nameParts = append(nameParts, title, sourceRef)
+	} else {
+		nameParts = append(nameParts, sourceName, sourceID)
+	}
+	parts := append(nameParts,
 		string(stepParam.TargetLanguage),
 		orientation,
 		mode,
 		now.Format("2006-01-02"),
-	}
+	)
 	return strings.Join(nonEmptyNameParts(parts...), "_") + ".mp4"
 }
 

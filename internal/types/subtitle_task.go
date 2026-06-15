@@ -230,6 +230,36 @@ Use "Previous Sentences" and "Next Sentences" only to resolve context, pronouns,
 
 **Provide only the final single-line dubbing subtitle:**`
 
+var TranslationAuditPrompt = `You are a rigorous bilingual subtitle translation auditor.
+
+[TASK]
+Audit whether each translated dubbing subtitle fully preserves the meaning of its source sentence in %s.
+The translation may be concise and natural for speech, but it must not omit causal clauses, negations, conditions, comparisons, numbers, named entities, or technical terms.
+
+[RULES]
+1. Preserve protected terms exactly when they appear, unless a conventional localized form is clearly better.
+2. Do not mark a translation incomplete only because it is natural or condensed.
+3. Mark should_repair=true if meaning is missing, mistranslated, or the translation is mostly untranslated source text.
+4. If should_repair=true, repaired_translation must be a complete, natural, speakable subtitle.
+5. Output JSON only. No markdown, no explanations outside JSON.
+
+[OUTPUT SCHEMA]
+{
+  "items": [
+    {
+      "index": 0,
+      "complete": true,
+      "missing_meaning": [],
+      "protected_terms": [],
+      "should_repair": false,
+      "repaired_translation": ""
+    }
+  ]
+}
+
+[SUBTITLES TO AUDIT]
+%s`
+
 type SmallAudio struct {
 	AudioFile         string
 	TranscriptionData *TranscriptionData
