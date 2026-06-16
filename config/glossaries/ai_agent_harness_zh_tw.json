@@ -1,0 +1,50 @@
+{
+  "domain": "ai-agent-harness",
+  "target_language": "zh-TW",
+  "terms": {
+    "AI agent": "AI 代理",
+    "agent": "代理",
+    "harness": "harness",
+    "meta-harness": "MetaHarness",
+    "tool call": "工具呼叫",
+    "session": "session",
+    "sandbox": "沙盒",
+    "approval proxy": "approval proxy",
+    "cost cap": "成本上限",
+    "risk score": "風險分數",
+    "repo scope": "repo 範圍",
+    "file scope": "檔案範圍",
+    "worktree": "worktree",
+    "subagent": "subagent"
+  },
+  "protected_names": [
+    "MetaHarness",
+    "OmniHarness",
+    "Claude Code",
+    "Codex",
+    "Claude",
+    "GPT",
+    "Polly",
+    "Debbie",
+    "Databricks",
+    "Apache 2.0",
+    "YAML",
+    "MCP",
+    "Docker",
+    "Railway",
+    "Fly",
+    "Cloud Sandbox",
+    "REST API",
+    "Ollama",
+    "Google AI Studio",
+    "Gemini Nano Banana",
+    "YOLO",
+    "API",
+    "UI",
+    "SDK"
+  ],
+  "notes": [
+    "Keep product names, model names, and developer tool names in English.",
+    "Translate generic harness explanations naturally, but keep the key concept token as harness or MetaHarness."
+  ]
+}

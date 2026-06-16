@@ -116,11 +116,7 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		UserUILanguage:     types.StandardLanguageCode(req.Language),
 	}
 	stepParam.TargetLanguage = types.StandardLanguageCode(normalizeTargetLanguageCode(req.TargetLang))
-	embedSubtitleType := req.EmbedSubtitleVideoType
-	if embedSubtitleType == "" {
-		embedSubtitleType = "horizontal"
-	}
-	stepParam.EmbedSubtitleVideoType = embedSubtitleType
+	stepParam.EmbedSubtitleVideoType = normalizeEmbedSubtitleVideoType(req.EmbedSubtitleVideoType)
 	stepParam.VerticalVideoMajorTitle = req.VerticalMajorTitle
 	stepParam.VerticalVideoMinorTitle = req.VerticalMinorTitle
 	stepParam.MaxWordOneLine = 12 // 默认值

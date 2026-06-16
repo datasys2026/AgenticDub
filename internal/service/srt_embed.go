@@ -24,16 +24,23 @@ import (
 
 func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTaskStepParam) error {
 	var err error
-	if stepParam.EmbedSubtitleVideoType == "horizontal" || stepParam.EmbedSubtitleVideoType == "vertical" || stepParam.EmbedSubtitleVideoType == "all" {
+	embedSubtitleVideoType := normalizeEmbedSubtitleVideoType(stepParam.EmbedSubtitleVideoType)
+	if embedSubtitleVideoType == "none" {
+		log.GetLogger().Info("合成视频：不合成")
+		return nil
+	}
+	if embedSubtitleVideoType == "horizontal" || embedSubtitleVideoType == "vertical" || embedSubtitleVideoType == "all" || embedSubtitleVideoType == "original" {
 		var width, height int
 		width, height, err = getResolution(stepParam.InputVideoPath)
 		if err != nil {
 			log.GetLogger().Error("embedSubtitles getResolution error", zap.Any("step param", stepParam), zap.Error(err))
 			return fmt.Errorf("embedSubtitles getResolution error: %w", err)
 		}
+		embedSubtitleVideoType = resolveEmbedSubtitleVideoType(embedSubtitleVideoType, width, height)
+		stepParam.EmbedSubtitleVideoType = embedSubtitleVideoType
 
 		// 横屏可以合成竖屏的，但竖屏暂时不支持合成横屏的
-		if stepParam.EmbedSubtitleVideoType == "horizontal" || stepParam.EmbedSubtitleVideoType == "all" {
+		if embedSubtitleVideoType == "horizontal" || embedSubtitleVideoType == "all" {
 			if width < height {
 				log.GetLogger().Info("检测到输入视频是竖屏，无法合成横屏视频，跳过")
 				return nil
@@ -45,19 +52,22 @@ func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTa
 				return fmt.Errorf("embedSubtitles embedSubtitles error: %w", err)
 			}
 		}
-		if stepParam.EmbedSubtitleVideoType == "vertical" || stepParam.EmbedSubtitleVideoType == "all" {
+		if embedSubtitleVideoType == "vertical" || embedSubtitleVideoType == "all" {
 			if width > height {
 				// 生成竖屏视频
-				transferredVerticalVideoPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTransferredVerticalVideoFileName)
-				err = convertToVertical(stepParam.InputVideoPath, transferredVerticalVideoPath, stepParam.VerticalVideoMajorTitle, stepParam.VerticalVideoMinorTitle)
+				verticalInputPath, transferredVerticalVideoFileName := verticalTransferInput(stepParam)
+				transferredVerticalVideoPath := filepath.Join(stepParam.TaskBasePath, transferredVerticalVideoFileName)
+				err = convertToVertical(verticalInputPath, transferredVerticalVideoPath, stepParam.VerticalVideoMajorTitle, stepParam.VerticalVideoMinorTitle)
 				if err != nil {
 					log.GetLogger().Error("embedSubtitles convertToVertical error", zap.Any("step param", stepParam), zap.Error(err))
 					return fmt.Errorf("embedSubtitles convertToVertical error: %w", err)
 				}
 				stepParam.InputVideoPath = transferredVerticalVideoPath
+			} else if stepParam.EnableTts && stepParam.VideoWithTtsFilePath != "" {
+				stepParam.InputVideoPath = stepParam.VideoWithTtsFilePath
 			}
 			log.GetLogger().Info("合成视频：竖屏")
-			err = embedSubtitles(stepParam, false, stepParam.EnableTts)
+			err = embedSubtitles(stepParam, false, false)
 			if err != nil {
 				log.GetLogger().Error("embedSubtitles embedSubtitles error", zap.Any("step param", stepParam), zap.Error(err))
 				return fmt.Errorf("embedSubtitles embedSubtitles error: %w", err)
@@ -68,6 +78,35 @@ func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTa
 	}
 	log.GetLogger().Info("合成视频：不合成")
 	return nil
+}
+
+func verticalTransferInput(stepParam *types.SubtitleTaskStepParam) (string, string) {
+	if stepParam.EnableTts && stepParam.VideoWithTtsFilePath != "" {
+		return stepParam.VideoWithTtsFilePath, types.SubtitleTaskTransferredVerticalVideoWithTtsFileName
+	}
+	return stepParam.InputVideoPath, types.SubtitleTaskTransferredVerticalVideoFileName
+}
+
+func normalizeEmbedSubtitleVideoType(embedSubtitleVideoType string) string {
+	switch strings.ToLower(strings.TrimSpace(embedSubtitleVideoType)) {
+	case "", "adaptive":
+		return "original"
+	case "original", "horizontal", "vertical", "all", "none":
+		return strings.ToLower(strings.TrimSpace(embedSubtitleVideoType))
+	default:
+		return embedSubtitleVideoType
+	}
+}
+
+func resolveEmbedSubtitleVideoType(embedSubtitleVideoType string, width, height int) string {
+	embedSubtitleVideoType = normalizeEmbedSubtitleVideoType(embedSubtitleVideoType)
+	if embedSubtitleVideoType != "original" {
+		return embedSubtitleVideoType
+	}
+	if width < height {
+		return "vertical"
+	}
+	return "horizontal"
 }
 
 func splitMajorTextInHorizontal(text string, language types.StandardLanguageCode, maxWordOneLine int) []string {

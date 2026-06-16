@@ -23,10 +23,21 @@ Rules:
 
 - Target text lines should not contain `，。？！、；：·・･`.
 - Target-only tasks should not include source English in `target_language_srt.srt`.
+- Keep each subtitle as one visual line unless the user explicitly asks for multiline subtitles.
+- Keep protected English names, acronyms, and brands intact.
 - Subtitle durations should be readable:
   - minimum display around `1.5s`;
   - target pace around `6` CJK chars/sec;
   - never extend past the next subtitle start.
+
+Run the bundled audit script:
+
+```bash
+node .agents/skills/video-translation-with-voice/scripts/subtitle_audit.mjs \
+  --srt "tasks/<task_id>/target_language_srt.srt" \
+  --ass "tasks/<task_id>/formatted_subtitles.ass" \
+  --glossary "config/glossaries/<domain>_zh_tw.json"
+```
 
 ## ASS Burn-In
 
@@ -77,6 +88,8 @@ Expected for the standard 47s vertical test video:
 - Final video audio is AAC.
 - `tts_final_audio.wav` is PCM, 24kHz mono, about the same duration as the original video.
 
+For normal source videos, preserve original aspect ratio unless the user explicitly requested vertical output.
+
 ## Common Failure Patterns
 
 - Punctuation remains in final SRT: HITL approved content was not applied to target SRT.
@@ -84,3 +97,5 @@ Expected for the standard 47s vertical test video:
 - Subtitle appears too late vs speech: sentence audio is absorbing the gap to next subtitle.
 - Subtitle disappears too fast: readable timing thresholds are too aggressive.
 - `OpenCL`/`Linux` lines use `Minor`: mixed Chinese/Latin detection is wrong.
+- Speaker voice changes randomly across cues: voice assignment happened per cue instead of per inferred speaker.
+- Final video has stale subtitles: ASS burn-in reused an older video after text/TTS edits.

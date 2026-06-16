@@ -9,6 +9,63 @@ import (
 	"krillin-ai/internal/types"
 )
 
+func TestNormalizeEmbedSubtitleVideoTypeDefaultsToOriginal(t *testing.T) {
+	tests := map[string]string{
+		"":         "original",
+		"adaptive": "original",
+		"Original": "original",
+		"none":     "none",
+	}
+
+	for input, want := range tests {
+		if got := normalizeEmbedSubtitleVideoType(input); got != want {
+			t.Fatalf("normalizeEmbedSubtitleVideoType(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestResolveEmbedSubtitleVideoTypeKeepsOriginalAspect(t *testing.T) {
+	if got := resolveEmbedSubtitleVideoType("original", 1920, 1080); got != "horizontal" {
+		t.Fatalf("16:9 original should resolve to horizontal, got %q", got)
+	}
+	if got := resolveEmbedSubtitleVideoType("original", 720, 1280); got != "vertical" {
+		t.Fatalf("9:16 original should resolve to vertical, got %q", got)
+	}
+	if got := resolveEmbedSubtitleVideoType("vertical", 1920, 1080); got != "vertical" {
+		t.Fatalf("explicit vertical should stay vertical, got %q", got)
+	}
+}
+
+func TestVerticalTransferInputUsesDubbedVideoWhenTtsEnabled(t *testing.T) {
+	stepParam := &types.SubtitleTaskStepParam{
+		InputVideoPath:       "origin_video.mp4",
+		EnableTts:            true,
+		VideoWithTtsFilePath: "video_with_tts.mp4",
+	}
+
+	input, filename := verticalTransferInput(stepParam)
+	if input != "video_with_tts.mp4" {
+		t.Fatalf("vertical transfer should use dubbed video input, got %q", input)
+	}
+	if filename != types.SubtitleTaskTransferredVerticalVideoWithTtsFileName {
+		t.Fatalf("vertical transfer should use TTS-specific temp filename, got %q", filename)
+	}
+}
+
+func TestVerticalTransferInputUsesOriginalVideoWithoutTts(t *testing.T) {
+	stepParam := &types.SubtitleTaskStepParam{
+		InputVideoPath: "origin_video.mp4",
+	}
+
+	input, filename := verticalTransferInput(stepParam)
+	if input != "origin_video.mp4" {
+		t.Fatalf("vertical transfer should use original video input, got %q", input)
+	}
+	if filename != types.SubtitleTaskTransferredVerticalVideoFileName {
+		t.Fatalf("vertical transfer should use original temp filename, got %q", filename)
+	}
+}
+
 func TestSplitChineseTextBalancesLinesAndAvoidsShortTail(t *testing.T) {
 	got := splitChineseText("所以彼得斯坦伯格在這裡他寫了一個軟體", 10)
 	if len(got) != 2 {

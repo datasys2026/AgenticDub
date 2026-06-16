@@ -331,6 +331,7 @@ const (
 	SubtitleTaskTranslationRawDataPersistenceFileNamePattern     = "audio_translation_raw_data_%d.json"
 	SubtitleTaskTranslationDataPersistenceFileNamePattern        = "translation_data_%d.json"
 	SubtitleTaskTransferredVerticalVideoFileName                 = "transferred_vertical_video.mp4"
+	SubtitleTaskTransferredVerticalVideoWithTtsFileName          = "transferred_vertical_video_with_tts.mp4"
 	SubtitleTaskHorizontalEmbedVideoFileName                     = "horizontal_embed.mp4"
 	SubtitleTaskVerticalEmbedVideoFileName                       = "vertical_embed.mp4"
 	SubtitleTaskVideoWithTtsFileName                             = "video_with_tts.mp4"

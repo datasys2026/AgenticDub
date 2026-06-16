@@ -38,7 +38,7 @@ type TranslateVideoInput struct {
 	LLMProfile     string `json:"llm_profile" jsonschema:"LLM profile name from list_model_profiles (fast, quality, external, light, grok)"`
 	STTProfile     string `json:"stt_profile" jsonschema:"STT profile name from list_model_profiles (default, xai)"`
 	TTSProfile     string `json:"tts_profile" jsonschema:"TTS profile name from list_model_profiles (default, xai)"`
-	EmbedVideoType string `json:"embed_video_type" jsonschema:"subtitle burn type (horizontal, vertical, none)"`
+	EmbedVideoType string `json:"embed_video_type" jsonschema:"subtitle burn type (original, horizontal, vertical, none)"`
 }
 
 type TranslateVideoOutput struct {
@@ -59,7 +59,7 @@ func TranslateVideo(ctx context.Context, req *mcp.CallToolRequest, input Transla
 		input.TTSProfile = "default"
 	}
 	if input.EmbedVideoType == "" {
-		input.EmbedVideoType = "none"
+		input.EmbedVideoType = "original"
 	}
 
 	bilingual := 0
