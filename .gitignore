@@ -21,3 +21,16 @@ krillin-ai
 
 # Output (generated videos)
 output/
+
+# Archival cleanup runtime artifacts (2026-07-09)
+archive/runtime/
+__pycache__/
+/main
+
+# Foreign skills synced from global library via agentisync (not project-specific)
+.agents/skills/chrome-cdp-skill/
+.agents/skills/composio-cli/
+.agents/skills/dogfood/
+.agents/skills/hermes-remote-config/
+.agents/skills/yuanbao/
+.agents/skills/yuanyuan-youtube-thumbnail/
