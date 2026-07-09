@@ -1,11 +1,11 @@
 #!/bin/bash
-# deploy.sh - Deploy KrillinAI-CLI to aiark-agent
+# deploy.sh - Deploy AgenticDub CLI to aiark-agent
 
 set -e
 
-BINARY="krilin-ai"
+BINARY="agenticdub"
 HOST="aiark-agent.tail4227fa.ts.net"
-REMOTE_DIR="/opt/krilin-ai"
+REMOTE_DIR="/opt/agenticdub"
 
 echo "Cross-compiling for Linux AMD64..."
 GOOS=linux GOARCH=amd64 go build -o "/tmp/${BINARY}" ./cmd/cli/

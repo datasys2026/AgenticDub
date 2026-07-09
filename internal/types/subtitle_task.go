@@ -133,13 +133,15 @@ var SplitOriginLongSentencePrompt = `Please split the following text into multip
 
 Original text: %s
 
-Requirements:
+CRITICAL Requirements:
 1. The split sentences must exactly match the original text, absolutely no changes to the original text are allowed
 2. Split based on sentence meaning, dividing into at most 3 parts, preferably 2 parts
-3. Try to make the split as balanced as possible while maintaining sentence integrity
-4. Return in JSON format only, no other descriptions or explanations
-5. Example format:
-{"short_sentences":[{"text": "split sentence 1"},{"text": "split sentence 2"}]}
+3. Each split part MUST contain at least 3-5 words. NEVER create single-word or two-word fragments
+4. Split at natural break points (conjunctions, clauses) - DO NOT split phrases like "we're marking out", "you're going to", etc.
+5. Try to make the split as balanced as possible while maintaining sentence integrity
+6. Return in JSON format only, no other descriptions or explanations
+7. Example format:
+{"short_sentences":[{"text": "split sentence 1 with at least 3 words"},{"text": "split sentence 2 with at least 3 words"}]}
 
 `
 
@@ -203,17 +205,18 @@ Requirements:
 
 var SplitTextWithContextPrompt = `You are a professional subtitle translation expert.
 
-[STRICT TRANSLATION TASK]
+[DUBBING SUBTITLE TRANSLATION TASK]
 **Objective**: 
 Translate ONLY the "Target Sentence" below into %s.
-Use "Previous Sentences" ONLY to understand the context of referents (e.g. pronouns or ellipses), not to infer meaning.
+Use "Previous Sentences" and "Next Sentences" only to resolve context, pronouns, tone, terminology, and ellipses.
 
 **Critical Rules**:
-1. OUTPUT MUST BE A SINGLE LINE: only the translation of the target sentence
-2. Do NOT infer or explain the meaning of the target sentence. Do NOT add any logical connections or causal phrases
-3. If the sentence is fragmentary or dependent (e.g. starts with "that"), KEEP IT THAT WAY in translation
-4. Do NOT complete or rewrite the sentence for fluency
-5. IGNORE the "Next Sentences" completely
+1. OUTPUT MUST BE A SINGLE LINE: only the translated dubbing subtitle
+2. Make the translation natural, concise, and speakable for TTS dubbing
+3. Keep all facts, names, numbers, and technical terms; do NOT add new information
+4. Avoid stiff word-for-word translation when a natural subtitle wording is clearer
+5. If the source is fragmentary, make it readable in the target language without inventing missing facts
+6. Do not explain, quote, label, or add formatting
 
 **Context**:
 [Previous Sentences]
@@ -225,7 +228,39 @@ Use "Previous Sentences" ONLY to understand the context of referents (e.g. prono
 [Next Sentences]
 %s
 
-**Your output must be literal, minimal, and on a single line. Provide only the translation result:**`
+**Provide only the final single-line dubbing subtitle:**`
+
+var TranslationAuditPrompt = `You are a rigorous bilingual subtitle translation auditor.
+
+[TASK]
+Audit whether each translated dubbing subtitle fully preserves the meaning of its source sentence in %s.
+The translation may be concise and natural for speech, but it must not omit causal clauses, negations, conditions, comparisons, numbers, named entities, or technical terms.
+
+[RULES]
+1. Preserve protected terms exactly when they appear, unless a conventional localized form is clearly better.
+2. Do not mark a translation incomplete only because it is natural or condensed.
+3. Mark should_repair=true if meaning is missing, mistranslated, or the translation is mostly untranslated source text.
+4. If should_repair=true, repaired_translation must be a complete, natural, speakable subtitle.
+5. Repair only the source sentence. Never add meaning from previous_source or following_source.
+6. If the source is a short filler such as "you know", "like", "yeah", "right", "I mean", or "and then", keep the repair equally short.
+7. Output JSON only. No markdown, no explanations outside JSON.
+
+[OUTPUT SCHEMA]
+{
+  "items": [
+    {
+      "index": 0,
+      "complete": true,
+      "missing_meaning": [],
+      "protected_terms": [],
+      "should_repair": false,
+      "repaired_translation": ""
+    }
+  ]
+}
+
+[SUBTITLES TO AUDIT]
+%s`
 
 type SmallAudio struct {
 	AudioFile         string
@@ -268,7 +303,7 @@ const (
 )
 
 const (
-	SubtitleTaskStatusProcessing    uint8 = iota + 1
+	SubtitleTaskStatusProcessing uint8 = iota + 1
 	SubtitleTaskStatusSuccess
 	SubtitleTaskStatusFailed
 	SubtitleTaskStatusPendingReview // HITL: waiting for review
@@ -298,6 +333,7 @@ const (
 	SubtitleTaskTranslationRawDataPersistenceFileNamePattern     = "audio_translation_raw_data_%d.json"
 	SubtitleTaskTranslationDataPersistenceFileNamePattern        = "translation_data_%d.json"
 	SubtitleTaskTransferredVerticalVideoFileName                 = "transferred_vertical_video.mp4"
+	SubtitleTaskTransferredVerticalVideoWithTtsFileName          = "transferred_vertical_video_with_tts.mp4"
 	SubtitleTaskHorizontalEmbedVideoFileName                     = "horizontal_embed.mp4"
 	SubtitleTaskVerticalEmbedVideoFileName                       = "vertical_embed.mp4"
 	SubtitleTaskVideoWithTtsFileName                             = "video_with_tts.mp4"
@@ -344,6 +380,7 @@ type SubtitleTaskStepParam struct {
 	VerticalVideoMinorTitle     string
 	MaxWordOneLine              int    // 字幕一行最多显示多少个字
 	VideoWithTtsFilePath        string // 替换源视频的音频为tts结果后的视频路径
+	EmbeddedVideoFilePath       string // 最终嵌入字幕的视频路径
 }
 
 type SrtSentence struct {
@@ -386,6 +423,7 @@ type SubtitleTask struct {
 	SubtitleInfos         []SubtitleInfo `gorm:"foreignKey:TaskId;references:TaskId"`
 	Cover                 string         `json:"cover" gorm:"column:cover"`                             // 封面
 	SpeechDownloadUrl     string         `json:"speech_download_url" gorm:"column:speech_download_url"` // 语音文件下载地址
+	VideoDownloadUrl      string         `json:"video_download_url" gorm:"column:video_download_url"`   // 视频文件下载地址
 	CreateTime            int64          `json:"create_time" gorm:"column:create_time;autoCreateTime"`  // 创建时间
 	UpdateTime            int64          `json:"update_time" gorm:"column:update_time;autoUpdateTime"`  // 更新时间
 }

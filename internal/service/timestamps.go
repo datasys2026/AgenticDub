@@ -82,22 +82,26 @@ func (tg *TimestampGenerator) GenerateTimestamps(srtBlocks []*util.SrtBlock, wor
 				zap.Error(err))
 			// Use fallback timing
 			startTime = lastEndTime
-			endTime = lastEndTime
+			endTime = lastEndTime + 1.0
 		} else {
 			// Ensure timestamps don't overlap with previous block
 			if startTime < lastEndTime {
 				startTime = lastEndTime
 			}
-			if endTime <= startTime {
-				endTime = startTime + 1.0 // Minimum 1 second duration
+			if !isUsableMatchedTiming(startTime, endTime, lastEndTime) {
+				log.GetLogger().Warn("Suspicious sentence timestamp, using fallback timing",
+					zap.String("sentence", block.OriginLanguageSentence),
+					zap.Float64("startTime", startTime),
+					zap.Float64("endTime", endTime),
+					zap.Float64("lastEndTime", lastEndTime))
+				startTime = lastEndTime
+				endTime = lastEndTime + 1.0
 			}
 		}
 
 		// Generate timestamp string
 		updatedBlocks[i].Timestamp = util.ConvertTimes(float32(startTime+tsOffset), float32(endTime+tsOffset))
-		if endTime-startTime < 5 {
-			lastEndTime = endTime
-		}
+		lastEndTime = endTime
 
 		log.GetLogger().Debug("Generated timestamp for sentence",
 			zap.Int("index", block.Index),

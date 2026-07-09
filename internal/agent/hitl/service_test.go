@@ -45,6 +45,76 @@ Good morning
 	}
 }
 
+func TestReviewService_CreateReviewFromBilingualTargetOnBottom(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	srtContent := `1
+00:00:00,000 --> 00:00:01,000
+Hello world
+你好世界
+
+2
+00:00:01,000 --> 00:00:02,000
+Good morning
+早安
+`
+	srtPath := filepath.Join(tmpDir, "bilingual.srt")
+	if err := os.WriteFile(srtPath, []byte(srtContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := hitl.ReviewService{
+		Parser:  hitl.TxtParser{},
+		Merger:  hitl.SRTMerger{},
+		BaseDir: tmpDir,
+	}
+
+	doc, err := svc.CreateReviewFromBilingual("task-123", srtPath, "Test Video", "繁體中文", false)
+	if err != nil {
+		t.Fatalf("CreateReviewFromBilingual failed: %v", err)
+	}
+	if got := doc.Segments[0].Original; got != "Hello world" {
+		t.Fatalf("expected original English, got %q", got)
+	}
+	if got := doc.Segments[0].Edited; got != "你好世界" {
+		t.Fatalf("expected edited Chinese, got %q", got)
+	}
+	if got := doc.Segments[1].Index; got != 2 {
+		t.Fatalf("expected second segment index 2, got %d", got)
+	}
+}
+
+func TestReviewService_CreateReviewFromBilingualTargetOnTop(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	srtContent := `1
+00:00:00,000 --> 00:00:01,000
+你好世界
+Hello world
+`
+	srtPath := filepath.Join(tmpDir, "bilingual.srt")
+	if err := os.WriteFile(srtPath, []byte(srtContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := hitl.ReviewService{
+		Parser:  hitl.TxtParser{},
+		Merger:  hitl.SRTMerger{},
+		BaseDir: tmpDir,
+	}
+
+	doc, err := svc.CreateReviewFromBilingual("task-123", srtPath, "Test Video", "繁體中文", true)
+	if err != nil {
+		t.Fatalf("CreateReviewFromBilingual failed: %v", err)
+	}
+	if got := doc.Segments[0].Original; got != "Hello world" {
+		t.Fatalf("expected original English, got %q", got)
+	}
+	if got := doc.Segments[0].Edited; got != "你好世界" {
+		t.Fatalf("expected edited Chinese, got %q", got)
+	}
+}
+
 func TestReviewService_Approve(t *testing.T) {
 	tmpDir := t.TempDir()
 

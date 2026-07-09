@@ -400,7 +400,30 @@ func SplitTextSentences(text string, maxChars int) []string {
 		}
 	}
 
-	return result
+	finalResult := make([]string, 0, len(result))
+	for _, sentence := range result {
+		trimmed := strings.TrimSpace(sentence)
+		if isStandalonePunctuation(trimmed) {
+			if len(finalResult) > 0 {
+				lastIdx := len(finalResult) - 1
+				finalResult[lastIdx] += trimmed
+			}
+			continue
+		}
+		if punctuation, remaining, ok := splitLeadingStandalonePunctuation(trimmed); ok {
+			if len(finalResult) > 0 {
+				lastIdx := len(finalResult) - 1
+				finalResult[lastIdx] += punctuation
+			}
+			if remaining != "" {
+				finalResult = append(finalResult, remaining)
+			}
+			continue
+		}
+		finalResult = append(finalResult, sentence)
+	}
+
+	return finalResult
 }
 
 // protectedPatterns 存储被保护的模式
@@ -623,4 +646,37 @@ func ConvertTimes(start, end float32) string {
 	startTime := FormatTime(start)
 	endTime := FormatTime(end)
 	return fmt.Sprintf("%s --> %s", startTime, endTime)
+}
+
+func isStandalonePunctuation(text string) bool {
+	if text == "" {
+		return false
+	}
+
+	for _, punctuation := range standalonePunctuations() {
+		if text == punctuation {
+			return true
+		}
+	}
+	return false
+}
+
+func splitLeadingStandalonePunctuation(text string) (punctuation, remaining string, ok bool) {
+	for _, candidate := range standalonePunctuations() {
+		if strings.HasPrefix(text, candidate+" ") {
+			return candidate, strings.TrimSpace(strings.TrimPrefix(text, candidate)), true
+		}
+	}
+	return "", text, false
+}
+
+func standalonePunctuations() []string {
+	return []string{
+		"\"",
+		"\u201c",
+		"\u201d",
+		"'",
+		"\u2018",
+		"\u2019",
+	}
 }

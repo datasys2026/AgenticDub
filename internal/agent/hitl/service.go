@@ -77,8 +77,9 @@ func (s ReviewService) CreateReview(taskID, srtPath, videoTitle, language string
 		}
 
 		if state == 0 {
-			if n, err := fmt.Sscanf(line, "%d", new(int)); err == nil && n > 0 {
-				index = n
+			var parsedIndex int
+			if _, err := fmt.Sscanf(line, "%d", &parsedIndex); err == nil && parsedIndex > 0 {
+				index = parsedIndex
 				state = 1
 			}
 		} else if state == 1 {
@@ -112,7 +113,7 @@ func (s ReviewService) CreateReview(taskID, srtPath, videoTitle, language string
 	}, nil
 }
 
-func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, videoTitle, language string) (ReviewDocument, error) {
+func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, videoTitle, language string, targetOnTop bool) (ReviewDocument, error) {
 	srtFile, err := os.Open(bilingualSrtPath)
 	if err != nil {
 		return ReviewDocument{}, err
@@ -122,8 +123,8 @@ func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, video
 	var segments []Segment
 	index := 1
 	var currentStart, currentEnd time.Time
-	var chineseText, englishText string
-	state := 0 // 0: index, 1: time, 2: chinese, 3: english
+	var originalText, translatedText string
+	state := 0 // 0: index, 1: time, 2: original, 3: translated
 
 	scanner := bufio.NewScanner(srtFile)
 	for scanner.Scan() {
@@ -131,23 +132,25 @@ func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, video
 
 		if line == "" {
 			if state == 3 && index > 0 {
+				original, translated := orderedReviewLines(originalText, translatedText, targetOnTop)
 				segments = append(segments, Segment{
 					Index:    index,
 					Start:    currentStart,
 					End:      currentEnd,
-					Original: englishText,
-					Edited:   CleanPunctuation(chineseText),
+					Original: original,
+					Edited:   CleanPunctuation(translated),
 				})
 			}
 			state = 0
-			chineseText = ""
-			englishText = ""
+			originalText = ""
+			translatedText = ""
 			continue
 		}
 
 		if state == 0 {
-			if n, err := fmt.Sscanf(line, "%d", new(int)); err == nil && n > 0 {
-				index = n
+			var parsedIndex int
+			if _, err := fmt.Sscanf(line, "%d", &parsedIndex); err == nil && parsedIndex > 0 {
+				index = parsedIndex
 				state = 1
 			}
 		} else if state == 1 {
@@ -158,20 +161,21 @@ func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, video
 				state = 2
 			}
 		} else if state == 2 {
-			chineseText = line
+			originalText = line
 			state = 3
 		} else if state == 3 {
-			englishText = line
+			translatedText = line
 		}
 	}
 
 	if state == 3 && index > 0 {
+		original, translated := orderedReviewLines(originalText, translatedText, targetOnTop)
 		segments = append(segments, Segment{
 			Index:    index,
 			Start:    currentStart,
 			End:      currentEnd,
-			Original: englishText,
-			Edited:   CleanPunctuation(chineseText),
+			Original: original,
+			Edited:   CleanPunctuation(translated),
 		})
 	}
 
@@ -182,6 +186,13 @@ func (s ReviewService) CreateReviewFromBilingual(taskID, bilingualSrtPath, video
 		Segments:   segments,
 		CreatedAt:  time.Now(),
 	}, nil
+}
+
+func orderedReviewLines(firstText, secondText string, targetOnTop bool) (original, translated string) {
+	if targetOnTop {
+		return secondText, firstText
+	}
+	return firstText, secondText
 }
 
 func (s ReviewService) SaveReview(doc ReviewDocument, path string) error {

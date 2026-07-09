@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-var punctuationRegex = regexp.MustCompile(`[，。？！、；：""''（）【】《》「」『』!?,.\:\;\"\'\(\)\[\]\<\>]+`)
+var punctuationRegex = regexp.MustCompile(`[，。？！、；：""''（）【】《》「」『』·・･•…—–\-!?,.\:\;\"\'\(\)\[\]\<\>]+`)
 
 func CleanPunctuation(text string) string {
 	result := punctuationRegex.ReplaceAllString(text, " ")

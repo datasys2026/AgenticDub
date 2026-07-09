@@ -1,0 +1,130 @@
+{
+  "name": "pickleball_zh_tw",
+  "target_language": "zh_tw",
+  "domain": "pickleball",
+  "rules": [
+    {
+      "type": "person_name",
+      "note": "英文姓名保留英文原名，不翻成中文；TTS 也直接讀英文名。"
+    },
+    {
+      "type": "subtitle_style",
+      "note": "字幕維持單行、無中文標點；必要時用空格分隔語意。"
+    }
+  ],
+  "terms": [
+    {
+      "source": "pickleball",
+      "target": "匹克球",
+      "note": "運動名稱"
+    },
+    {
+      "source": "paddle",
+      "target": "匹克球拍",
+      "note": "匹克球球拍；避免譯成一般球拍時失去語境"
+    },
+    {
+      "source": "kitchen",
+      "target": "廚房區",
+      "note": "匹克球非截擊區；第一次或語境不清時可用「廚房區 非截擊區」"
+    },
+    {
+      "source": "kitchen violation",
+      "target": "廚房區違規",
+      "note": "踩入非截擊區等違規"
+    },
+    {
+      "source": "underhand serve",
+      "target": "低手發球",
+      "note": "匹克球發球方式"
+    },
+    {
+      "source": "serve",
+      "target": "發球",
+      "note": "發球"
+    },
+    {
+      "source": "return",
+      "target": "回球",
+      "note": "依語境也可譯為接發"
+    },
+    {
+      "source": "volley",
+      "target": "截擊",
+      "note": "球落地前擊球"
+    },
+    {
+      "source": "forehand",
+      "target": "正手",
+      "note": "正手拍"
+    },
+    {
+      "source": "backhand",
+      "target": "反手",
+      "note": "反手拍"
+    },
+    {
+      "source": "side out",
+      "target": "換發",
+      "note": "發球權轉換"
+    },
+    {
+      "source": "rally",
+      "target": "來回",
+      "note": "回合中的連續對打"
+    },
+    {
+      "source": "game point",
+      "target": "局點",
+      "note": "拿下該局的一分"
+    },
+    {
+      "source": "challenge",
+      "target": "挑戰",
+      "note": "挑戰判決"
+    },
+    {
+      "source": "out",
+      "target": "出界",
+      "note": "界外球"
+    },
+    {
+      "source": "line",
+      "target": "邊線",
+      "note": "球場線"
+    },
+    {
+      "source": "wiffle ball",
+      "target": "洞洞球",
+      "note": "匹克球的塑膠洞洞球"
+    },
+    {
+      "source": "home court advantage",
+      "target": "主場優勢",
+      "note": "主場優勢"
+    }
+  ],
+  "protected_names": [
+    "Andre Agassi",
+    "Agassi",
+    "Andre",
+    "Andy Roddick",
+    "Roddick",
+    "Andy",
+    "Courtney Johnson",
+    "Courtney",
+    "Steffi",
+    "Jeanie",
+    "Swifty",
+    "Sparky",
+    "Sam",
+    "McEnroe",
+    "Mardy Fish",
+    "Christian Alshon",
+    "Andrew",
+    "Vegas",
+    "Bombas",
+    "YOLO",
+    "ATP"
+  ]
+}

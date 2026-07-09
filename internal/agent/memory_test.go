@@ -2,12 +2,14 @@ package agent
 
 import (
 	"testing"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 func TestTerminologyMemory_AddAndGet(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	term := Term{Term: "AI", Translation: "人工智慧", Note: "技術術語"}
+	term := llm.Term{Term: "AI", Translation: "人工智慧", Note: "技術術語"}
 	mem.Add(term)
 
 	found := mem.Get("AI")
@@ -31,8 +33,8 @@ func TestTerminologyMemory_Get_NotFound(t *testing.T) {
 func TestTerminologyMemory_List(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	mem.Add(Term{Term: "AI", Translation: "人工智慧"})
-	mem.Add(Term{Term: "GPU", Translation: "顯示卡"})
+	mem.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
+	mem.Add(llm.Term{Term: "GPU", Translation: "顯示卡"})
 
 	terms := mem.List()
 	if len(terms) != 2 {
@@ -43,7 +45,7 @@ func TestTerminologyMemory_List(t *testing.T) {
 func TestTerminologyMemory_Clear(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	mem.Add(Term{Term: "AI", Translation: "人工智慧"})
+	mem.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
 	mem.Clear()
 
 	if len(mem.List()) != 0 {
@@ -54,8 +56,8 @@ func TestTerminologyMemory_Clear(t *testing.T) {
 func TestTerminologyMemory_ApplyToText(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	mem.Add(Term{Term: "AI", Translation: "人工智慧"})
-	mem.Add(Term{Term: "GPU", Translation: "顯示卡"})
+	mem.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
+	mem.Add(llm.Term{Term: "GPU", Translation: "顯示卡"})
 
 	text := "AI and GPU are important"
 	result := mem.ApplyToText(text)
@@ -137,7 +139,7 @@ func TestConversationMemory_Messages(t *testing.T) {
 func TestAgentMemory_All(t *testing.T) {
 	mem := NewAgentMemory()
 
-	mem.Terminology.Add(Term{Term: "AI", Translation: "人工智慧"})
+	mem.Terminology.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
 	mem.Conversation.Add("user", "Hello")
 
 	if mem.Terminology.Get("AI") == nil {
@@ -151,7 +153,7 @@ func TestAgentMemory_All(t *testing.T) {
 func TestTerminologyMemory_Delete(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	mem.Add(Term{Term: "AI", Translation: "人工智慧"})
+	mem.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
 	mem.Delete("AI")
 
 	if mem.Get("AI") != nil {
@@ -162,8 +164,8 @@ func TestTerminologyMemory_Delete(t *testing.T) {
 func TestTerminologyMemory_Update(t *testing.T) {
 	mem := NewTerminologyMemory()
 
-	mem.Add(Term{Term: "AI", Translation: "人工智慧"})
-	mem.Update("AI", Term{Term: "AI", Translation: "AI系統", Note: "updated"})
+	mem.Add(llm.Term{Term: "AI", Translation: "人工智慧"})
+	mem.Update("AI", llm.Term{Term: "AI", Translation: "AI系統", Note: "updated"})
 
 	term := mem.Get("AI")
 	if term.Translation != "AI系統" {

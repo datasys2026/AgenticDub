@@ -11,13 +11,20 @@
     host = "127.0.0.1"
     port = 8888
 
+[mcp]
+    server_url = "http://127.0.0.1:8888" # MCP server 连接的后端地址
+
+[xai_oauth]
+    base_url = "https://api.x.ai/v1" # Experimental Grok OAuth provider base URL
+    token_path = "~/.agenticdub/auth/xai.json" # OAuth token JSON path. Use ~/.hermes/auth.json to reuse Hermes Agent OAuth.
+
 # 下方的配置不是都要填，请结合文档说明进行配置
 
-[llm] #支持openai,deepseek,通义千问等所有兼容openai请求格式的模型服务
-    base_url = "" # 自定义base url，可配合转发站密钥使用，留空为openai官方api
+[llm] #LLM provider: aiark, openai, xai-oauth
+    provider = "aiark" # LLM provider selection
+    base_url = "https://aiark.com.tw/v1" # Base URL for LLM API
     api_key = "" # API密钥
-    model = "" # 指定模型名，可通过此字段结合base_url使用外部任何与OpenAI API兼容的大模型服务，留空默认为gpt-4o-mini
-    json = false # 所使用的llm接口是否支持json格式，如果支持请设置为true，若不知道这是什么，请保持为false
+    model = "aiark/gemma4-e2b" # 模型名稱
 
 [transcribe] # 视频转文本支持多种方案，配置时先填provider，再填对应的配置
     provider = "openai" #语音识别，当前可选值：openai,fasterwhisper,whisperkit,whisper.cpp,aliyun。(fasterwhisper不支持macOS,whisperkit只支持M芯片)
@@ -57,3 +64,56 @@
             access_key_id = ""
             access_key_secret = ""
             app_key= ""
+
+[models.llm.fast]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/qwen36-35b"
+
+[models.llm.quality]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-31b-qat"
+
+[models.llm.external]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-26b-qat"
+
+[models.llm.light]
+    provider = "aiark"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_LLM_API_KEY"
+    model = "aiark/gemma4-e4b"
+
+[models.llm.grok]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "grok-4.20-0309-non-reasoning"
+
+[models.stt.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/v1"
+    api_key_env = "AIARK_STT_API_KEY"
+    model = "aiark/faster-whisper-large-v3-fp16"
+
+[models.stt.xai]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "xai-stt"
+
+[models.tts.default]
+    provider = "openai"
+    base_url = "https://aiark.com.tw/tts/v1"
+    api_key_env = "AIARK_TTS_API_KEY"
+    model = "aiark/qwen3-tts-0.6b-customvoice"
+    voices = ["Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric", "Ryan", "Aiden", "Ono_Anna", "Sohee"]
+
+[models.tts.xai]
+    provider = "xai-oauth"
+    base_url = "https://api.x.ai/v1"
+    model = "xai-tts"
+    voices = ["eve", "ara", "rex", "sal", "leo"]

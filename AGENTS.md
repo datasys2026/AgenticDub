@@ -1,6 +1,6 @@
-# KrillinAI-CLI — PROJECT AGENTS.md
+# AgenticDub — PROJECT AGENTS.md
 
-**Binary**: `krillin-ai`
+**Project**: `AgenticDub`
 **Module**: `krillin-ai`
 **Language**: Go 1.22+
 
@@ -10,7 +10,7 @@
 
 AI 影片翻譯配音工具。核心流程：
 ```
-影片 → 音軌分離 → STT → 字幕切割 → LLM 翻譯 → TTS 合成 → 合併影片
+影片 → 下載 → STT → LLM 翻譯 → 翻譯稽核 → HITL 人工審核 → TTS → 字幕燒錄
 ```
 
 **開發目標：Agentic 化** — 加入 planner、tool use、memory、state machine 讓流程可規劃、可 interruption 恢復。
@@ -24,10 +24,25 @@ AI 影片翻譯配音工具。核心流程：
 | 服務 | 端點 | 模型 |
 |------|------|------|
 | **LLM** | `http://localhost:4000/v1/chat/completions` | `aiark/gemma4-e2b`, `aiark/qwen36-35b-iq3`, `aiark/deepseek-r1-14b` |
-| **STT** | `http://localhost:4000/v1/audio/transcriptions` | `faster-whisper-large-v3-fp16` |
-| **TTS** | `http://localhost:8082/v1/audio/speech` | `Qwen3-TTS-0.6B-CustomVoice` |
+| **STT** | `http://localhost:8006/v1/audio/transcriptions` | `faster-whisper-large-v3-fp16` |
+| **TTS** | `http://localhost:8002/v1/audio/speech` | `Qwen3-TTS-0.6B-CustomVoice` |
 
 所有端點皆為 OpenAI-compatible，共享 `sashabaranov/go-openai` 客戶端。
+
+## XAI / GROK OAUTH (experimental)
+
+目前 xAI / Grok 作為 experimental OAuth LLM/STT/TTS provider：
+- 不使用 `XAI_API_KEY`
+- token 預設路徑：`~/.agenticdub/auth/xai.json`
+- 本機 Hermes Agent 整合路徑：`~/.hermes/auth.json`
+- CLI status：`go run ./cmd/cli auth xai status`
+- CLI probe：`go run ./cmd/cli auth xai probe --token-path ~/.hermes/auth.json --model grok-4.20-0309-non-reasoning`
+- model profile：`models.llm.grok` → `provider = "xai-oauth"`, `model = "grok-4.20-0309-non-reasoning"`
+- STT profile：`models.stt.xai` → `provider = "xai-oauth"`, `model = "xai-stt"`
+- TTS profile：`models.tts.xai` → `provider = "xai-oauth"`, `model = "xai-tts"`, voices `eve`, `ara`, `rex`, `sal`, `leo`
+
+OAuth audio surface 仍可能受 Grok subscription / entitlement 限制；本機已用 Hermes token smoke test 通過 xAI STT/TTS endpoint。
+架構細節見 `docs/architecture/xai-oauth-provider.md`。
 
 ---
 
@@ -36,26 +51,31 @@ AI 影片翻譯配音工具。核心流程：
 ```
 cmd/
   server/              # 目前 entry point (Gin web server)
-  polydub/             # 未來 CLI entry point (cobra)
+  cli/                 # 目前 CLI entry point (cobra)
+  mcp/                 # thin stdio MCP proxy to HTTP backend
 
 internal/
-  agent/               # [規劃新增] Agent 核心
+  agent/               # Agent 核心
+    db.go              # SQLite task DB
     planner.go         # LLM 規劃翻譯策略
     tool.go            # Tool definitions (STT/TTS/LLM)
     memory.go          # 術語庫、對話歷史
     state.go           # 狀態機管理
-  api/                 # Gin API handlers
   deps/                # 環境依賴檢查 (ffmpeg, yt-dlp)
   dto/                 # Data transfer objects
   handler/             # API handler + config UI
+  translator/          # 字幕翻譯、切分、對齊
   response/            # API response wrappers
   router/              # Gin router setup
   server/              # Gin server 啟動
   service/             # 核心商業邏輯 (主要 pipeline)
     audio2subtitle.go  # 主要 pipeline (1389 行)
+    legacy_cli_pipeline.go # 獨立 legacy CLI pipeline
+    task_state.go      # 可恢復 task state
     srt2speech.go      # TTS 合成
     srt_embed.go       # 字幕燒錄進影片
     timestamps.go      # 時間軸對齊
+  providers/           # STT / LLM / TTS providers
   storage/             # 檔案處理工具
   types/               # 類型定義 + 翻譯 prompts
 
@@ -66,7 +86,6 @@ pkg/
   whisper/             # Whisper API
   whispercpp/          # Whisper.cpp
   whisperkit/          # WhisperKit (macOS M-series)
-  whisperx/            # WhisperX
   localtts/            # Edge-TTS
 
 config/
@@ -81,9 +100,23 @@ config/
 # Web server mode (目前)
 go run ./cmd/server/main.go
 
-# 未來 CLI mode (cobra)
-go run ./cmd/polydub/main.go run "https://youtube.com/watch?v=xxx"
+# CLI mode (目前)
+go run ./cmd/cli run "https://youtube.com/watch?v=xxx"
+
+# MCP server
+go run ./cmd/mcp
 ```
+
+主管線是 `cmd/server` 的 Gin HTTP backend：`StartSubtitleTask` 負責下載 → STT → LLM 翻譯 → 翻譯稽核 → HITL 人工審核 → TTS → 字幕燒錄。`cmd/mcp` 只是一層 thin stdio MCP proxy，透過 HTTP 呼叫 backend。`cmd/cli run` 保留為獨立 legacy pipeline（`internal/service/legacy_cli_pipeline.go`），直連 aiark 端點並使用 `internal/translator`。
+
+Python 審核工具鏈維持在 `scripts/build_subtitle_review.py`、`subtitle_review_viewer.html`、`build_semantic_blocks.py`，搭配 `.agents/skills/framecue` 使用。
+
+## ARCHIVE LAYOUT
+
+- `archive/docs-upstream`：上游 krillin-ai 多語文件
+- `archive/_code-legacy`：desktop UI、whisperx
+- `archive/runtime`：舊 task/output 產物，gitignored
+- `archive/scripts-superseded`：已被取代的腳本
 
 ---
 
@@ -147,22 +180,23 @@ flag > 環境變數 > `config/config.toml` > 預設值
 
 ```bash
 # 開發
-go build -o krillin-ai ./cmd/server/   # 編譯 web server
+go build -o AgenticDub ./cmd/server/     # 編譯 web server
+go build -o AgenticDub-cli ./cmd/cli/    # 編譯 CLI
 go test ./...                            # 測試
 go test -cover ./...                     # 含覆蓋率
 
 # 環境檢查 (doctor)
-# [規劃] krillin-ai doctor
+go run ./cmd/cli doctor
 
-# 影片翻譯 (CLI mode，未來)
-# krillin-ai run "url" --target-lang "繁體中文"
+# 影片翻譯 (CLI mode)
+go run ./cmd/cli run "url" --target-lang "繁體中文"
 ```
 
 ---
 
 ## ANTI-PATTERNS
 
-- 禁止在 `internal/service/` 直接實例化 provider（統一走 `service.NewService()`）
+- 禁止在業務流程函式內分散建立 provider；統一集中在 `service.NewService()` / `NewServiceWithConfig()`
 - 禁止在 `types/` 放業務邏輯（純資料結構 + prompts）
 - 禁止在 cmd/ 層寫商業邏輯
 
@@ -176,7 +210,7 @@ go test -cover ./...                     # 含覆蓋率
 - [x] Phase 3：TTS providers (openai, aliyun, edge-tts)
 - [x] Phase 4：Video compose (ffmpeg) + subtitle burn
 - [ ] Phase 5：**Agentic 重構** — planner + tools + memory + state machine
-- [ ] Phase 6：SQLite task DB — 可恢復 pipeline
+- [x] Phase 6：SQLite task DB — 可恢復 pipeline（`internal/service/task_state.go` + `internal/agent/db.go` 已接入主管線）
 - [ ] Phase 7：Reflective translation (3-step)
 
-**Current：Phase 5 規劃中**
+**Current：Phase 5 進行中**

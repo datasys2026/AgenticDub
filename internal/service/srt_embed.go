@@ -17,22 +17,30 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.uber.org/zap"
 )
 
 func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTaskStepParam) error {
 	var err error
-	if stepParam.EmbedSubtitleVideoType == "horizontal" || stepParam.EmbedSubtitleVideoType == "vertical" || stepParam.EmbedSubtitleVideoType == "all" {
+	embedSubtitleVideoType := normalizeEmbedSubtitleVideoType(stepParam.EmbedSubtitleVideoType)
+	if embedSubtitleVideoType == "none" {
+		log.GetLogger().Info("合成视频：不合成")
+		return nil
+	}
+	if embedSubtitleVideoType == "horizontal" || embedSubtitleVideoType == "vertical" || embedSubtitleVideoType == "all" || embedSubtitleVideoType == "original" {
 		var width, height int
 		width, height, err = getResolution(stepParam.InputVideoPath)
 		if err != nil {
 			log.GetLogger().Error("embedSubtitles getResolution error", zap.Any("step param", stepParam), zap.Error(err))
 			return fmt.Errorf("embedSubtitles getResolution error: %w", err)
 		}
+		embedSubtitleVideoType = resolveEmbedSubtitleVideoType(embedSubtitleVideoType, width, height)
+		stepParam.EmbedSubtitleVideoType = embedSubtitleVideoType
 
 		// 横屏可以合成竖屏的，但竖屏暂时不支持合成横屏的
-		if stepParam.EmbedSubtitleVideoType == "horizontal" || stepParam.EmbedSubtitleVideoType == "all" {
+		if embedSubtitleVideoType == "horizontal" || embedSubtitleVideoType == "all" {
 			if width < height {
 				log.GetLogger().Info("检测到输入视频是竖屏，无法合成横屏视频，跳过")
 				return nil
@@ -44,19 +52,22 @@ func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTa
 				return fmt.Errorf("embedSubtitles embedSubtitles error: %w", err)
 			}
 		}
-		if stepParam.EmbedSubtitleVideoType == "vertical" || stepParam.EmbedSubtitleVideoType == "all" {
+		if embedSubtitleVideoType == "vertical" || embedSubtitleVideoType == "all" {
 			if width > height {
 				// 生成竖屏视频
-				transferredVerticalVideoPath := filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTransferredVerticalVideoFileName)
-				err = convertToVertical(stepParam.InputVideoPath, transferredVerticalVideoPath, stepParam.VerticalVideoMajorTitle, stepParam.VerticalVideoMinorTitle)
+				verticalInputPath, transferredVerticalVideoFileName := verticalTransferInput(stepParam)
+				transferredVerticalVideoPath := filepath.Join(stepParam.TaskBasePath, transferredVerticalVideoFileName)
+				err = convertToVertical(verticalInputPath, transferredVerticalVideoPath, stepParam.VerticalVideoMajorTitle, stepParam.VerticalVideoMinorTitle)
 				if err != nil {
 					log.GetLogger().Error("embedSubtitles convertToVertical error", zap.Any("step param", stepParam), zap.Error(err))
 					return fmt.Errorf("embedSubtitles convertToVertical error: %w", err)
 				}
 				stepParam.InputVideoPath = transferredVerticalVideoPath
+			} else if stepParam.EnableTts && stepParam.VideoWithTtsFilePath != "" {
+				stepParam.InputVideoPath = stepParam.VideoWithTtsFilePath
 			}
 			log.GetLogger().Info("合成视频：竖屏")
-			err = embedSubtitles(stepParam, false, stepParam.EnableTts)
+			err = embedSubtitles(stepParam, false, false)
 			if err != nil {
 				log.GetLogger().Error("embedSubtitles embedSubtitles error", zap.Any("step param", stepParam), zap.Error(err))
 				return fmt.Errorf("embedSubtitles embedSubtitles error: %w", err)
@@ -67,6 +78,35 @@ func (s Service) embedSubtitles(ctx context.Context, stepParam *types.SubtitleTa
 	}
 	log.GetLogger().Info("合成视频：不合成")
 	return nil
+}
+
+func verticalTransferInput(stepParam *types.SubtitleTaskStepParam) (string, string) {
+	if stepParam.EnableTts && stepParam.VideoWithTtsFilePath != "" {
+		return stepParam.VideoWithTtsFilePath, types.SubtitleTaskTransferredVerticalVideoWithTtsFileName
+	}
+	return stepParam.InputVideoPath, types.SubtitleTaskTransferredVerticalVideoFileName
+}
+
+func normalizeEmbedSubtitleVideoType(embedSubtitleVideoType string) string {
+	switch strings.ToLower(strings.TrimSpace(embedSubtitleVideoType)) {
+	case "", "adaptive":
+		return "original"
+	case "original", "horizontal", "vertical", "all", "none":
+		return strings.ToLower(strings.TrimSpace(embedSubtitleVideoType))
+	default:
+		return embedSubtitleVideoType
+	}
+}
+
+func resolveEmbedSubtitleVideoType(embedSubtitleVideoType string, width, height int) string {
+	embedSubtitleVideoType = normalizeEmbedSubtitleVideoType(embedSubtitleVideoType)
+	if embedSubtitleVideoType != "original" {
+		return embedSubtitleVideoType
+	}
+	if width < height {
+		return "vertical"
+	}
+	return "horizontal"
 }
 
 func splitMajorTextInHorizontal(text string, language types.StandardLanguageCode, maxWordOneLine int) []string {
@@ -115,16 +155,87 @@ func splitMajorTextInHorizontal(text string, language types.StandardLanguageCode
 }
 
 func splitChineseText(text string, maxWordLine int) []string {
-	var lines []string
-	words := []rune(text)
-	for i := 0; i < len(words); i += maxWordLine {
-		end := i + maxWordLine
-		if end > len(words) {
-			end = len(words)
-		}
-		lines = append(lines, string(words[i:end]))
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil
 	}
+	if maxWordLine <= 0 {
+		maxWordLine = 12
+	}
+	tokens := mixedSubtitleTokens(text)
+	totalWidth := subtitleTokensWidth(tokens)
+	if totalWidth <= maxWordLine+3 {
+		return []string{text}
+	}
+
+	lineCount := (totalWidth + maxWordLine - 1) / maxWordLine
+	lines := make([]string, 0, lineCount)
+	currentTokens := make([]string, 0, len(tokens))
+	currentWidth := 0
+	remainingWidth := totalWidth
+	remainingLines := lineCount
+	for _, token := range tokens {
+		tokenWidth := len([]rune(token))
+		targetWidth := (remainingWidth + remainingLines - 1) / remainingLines
+		if currentWidth > 0 && currentWidth+tokenWidth > targetWidth && currentWidth >= minimumSubtitleSplitWidth(targetWidth) && len(lines) < lineCount-1 {
+			lines = append(lines, strings.TrimSpace(strings.Join(currentTokens, "")))
+			remainingWidth -= currentWidth
+			remainingLines--
+			currentTokens = currentTokens[:0]
+			currentWidth = 0
+			if strings.TrimSpace(token) == "" {
+				continue
+			}
+		}
+		if currentWidth == 0 && strings.TrimSpace(token) == "" {
+			continue
+		}
+		currentTokens = append(currentTokens, token)
+		currentWidth += tokenWidth
+	}
+	if len(currentTokens) > 0 {
+		lines = append(lines, strings.TrimSpace(strings.Join(currentTokens, "")))
+	}
+
 	return lines
+}
+
+func minimumSubtitleSplitWidth(targetWidth int) int {
+	minWidth := (targetWidth*3 + 3) / 4
+	if minWidth < 4 {
+		return 4
+	}
+	return minWidth
+}
+
+func mixedSubtitleTokens(text string) []string {
+	runes := []rune(text)
+	tokens := make([]string, 0, len(runes))
+	for i := 0; i < len(runes); {
+		if isProtectedSubtitleTokenRune(runes[i]) {
+			start := i
+			for i < len(runes) && isProtectedSubtitleTokenRune(runes[i]) {
+				i++
+			}
+			tokens = append(tokens, string(runes[start:i]))
+			continue
+		}
+		tokens = append(tokens, string(runes[i]))
+		i++
+	}
+	return tokens
+}
+
+func isProtectedSubtitleTokenRune(r rune) bool {
+	return r <= unicode.MaxASCII && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/')
+}
+
+func subtitleTokensWidth(tokens []string) int {
+	total := 0
+	for _, token := range tokens {
+		total += len([]rune(token))
+	}
+	return total
 }
 
 func parseSrtTime(timeStr string) (time.Duration, error) {
@@ -189,6 +300,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 
 	if isHorizontal {
 		_, _ = assFile.WriteString(types.AssHeaderHorizontal)
+		lastEndTime := time.Duration(0)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
@@ -216,6 +328,8 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				log.GetLogger().Error("srtToAss parseSrtTime error", zap.Error(err))
 				return fmt.Errorf("srtToAss parseSrtTime error: %w", err)
 			}
+			startTime, endTime = clampSubtitleDisplayInterval(startTime, endTime, lastEndTime)
+			lastEndTime = endTime
 
 			var subtitleLines []string
 			for scanner.Scan() {
@@ -226,7 +340,7 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 				subtitleLines = append(subtitleLines, textLine)
 			}
 
-			if len(subtitleLines) < 2 {
+			if len(subtitleLines) == 0 {
 				continue
 			}
 			//var majorTextLanguage types.StandardLanguageCode
@@ -238,15 +352,24 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 
 			//majorLine := strings.Join(splitMajorTextInHorizontal(subtitleLines[0], majorTextLanguage, stepParam.MaxWordOneLine), "      \\N")
 
+			if len(subtitleLines) == 1 {
+				maxWordLine := stepParam.MaxWordOneLine
+				if maxWordLine <= 0 {
+					maxWordLine = 12
+				}
+				writeSingleLineDialogueEvents(assFile, startTime, endTime, "Major", "{\\an2}{\\rMajor}", splitDisplayTextForSingleLine(subtitleLines[0], maxWordLine))
+				continue
+			}
 			// ASS条目
 			startFormatted := formatTimestamp(startTime)
 			endFormatted := formatTimestamp(endTime)
-			combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s\\N{\\rMinor}%s", subtitleLines[0], util.CleanPunction(subtitleLines[1]))
+			combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s\\N{\\rMinor}%s", cleanSubtitleDisplayText(subtitleLines[0]), cleanSubtitleDisplayText(subtitleLines[1]))
 			_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
 		}
 	} else {
 		// TODO 竖屏拆分调优
 		_, _ = assFile.WriteString(types.AssHeaderVertical)
+		lastEndTime := time.Duration(0)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
@@ -271,6 +394,8 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 			if err != nil {
 				return err
 			}
+			startTime, endTime = clampSubtitleDisplayInterval(startTime, endTime, lastEndTime)
+			lastEndTime = endTime
 
 			var content string
 			scanner.Scan()
@@ -280,39 +405,116 @@ func srtToAss(inputSRT, outputASS string, isHorizontal bool, stepParam *types.Su
 			}
 			totalTime := endTime - startTime
 
-			if !util.ContainsAlphabetic(content) {
+			if isMajorSubtitleContent(content, stepParam.TargetLanguage) {
 				// 处理中文字幕
-				chineseLines := splitChineseText(content, 10)
-				for i, line := range chineseLines {
-					iStart := startTime + time.Duration(float64(i)*float64(totalTime)/float64(len(chineseLines)))
-					iEnd := startTime + time.Duration(float64(i+1)*float64(totalTime)/float64(len(chineseLines)))
-					if iEnd > endTime {
-						iEnd = endTime
-					}
-
-					startFormatted := formatTimestamp(iStart)
-					endFormatted := formatTimestamp(iEnd)
-					cleanedText := util.CleanPunction(line)
-					combinedText := fmt.Sprintf("{\\an2}{\\rMajor}%s", cleanedText)
-					_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Major,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				maxWordLine := stepParam.MaxWordOneLine
+				if maxWordLine <= 0 {
+					maxWordLine = 12
 				}
+				writeSingleLineDialogueEvents(assFile, startTime, startTime+totalTime, "Major", "{\\an2}{\\rMajor}", splitDisplayTextForSingleLine(content, maxWordLine))
 			} else {
 				// 处理英文字幕
-				startFormatted := formatTimestamp(startTime)
-				endFormatted := formatTimestamp(endTime)
-				cleanedText := util.CleanPunction(content)
-				combinedText := fmt.Sprintf("{\\an2}{\\rMinor}%s", cleanedText)
-				_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,Minor,,0,0,0,,%s\n", startFormatted, endFormatted, combinedText))
+				maxWordLine := stepParam.MaxWordOneLine
+				if maxWordLine <= 0 {
+					maxWordLine = 12
+				}
+				writeSingleLineDialogueEvents(assFile, startTime, endTime, "Minor", "{\\an2}{\\rMinor}", splitDisplayTextForSingleLine(content, maxWordLine))
 			}
 		}
 	}
 	return nil
 }
 
+func splitDisplayTextForSingleLine(text string, maxWordLine int) []string {
+	cleanedText := cleanSubtitleDisplayText(text)
+	if cleanedText == "" {
+		return nil
+	}
+	return splitChineseText(cleanedText, maxWordLine)
+}
+
+func writeSingleLineDialogueEvents(assFile *os.File, startTime, endTime time.Duration, style, prefix string, lines []string) {
+	cleanedLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = cleanSubtitleDisplayText(line)
+		if line != "" {
+			cleanedLines = append(cleanedLines, line)
+		}
+	}
+	if len(cleanedLines) == 0 {
+		return
+	}
+
+	duration := endTime - startTime
+	if duration <= 0 {
+		duration = 100 * time.Millisecond
+	}
+	cursor := startTime
+	for i, line := range cleanedLines {
+		segmentEnd := endTime
+		if i < len(cleanedLines)-1 {
+			segmentEnd = startTime + time.Duration(int64(duration)*int64(i+1)/int64(len(cleanedLines)))
+			if segmentEnd <= cursor {
+				segmentEnd = cursor + 100*time.Millisecond
+			}
+		}
+		combinedText := fmt.Sprintf("%s%s", prefix, line)
+		_, _ = assFile.WriteString(fmt.Sprintf("Dialogue: 0,%s,%s,%s,,0,0,0,,%s\n", formatTimestamp(cursor), formatTimestamp(segmentEnd), style, combinedText))
+		cursor = segmentEnd
+	}
+}
+
+var subtitleDisplayPunctuationRegex = regexp.MustCompile(`[，。？！、；：""''（）【】《》「」『』·・･•…—–\-!?,.\:\;\"\'\(\)\[\]\<\>]+`)
+
+func cleanSubtitleDisplayText(text string) string {
+	text = stripSpeechTagsFromDisplay(text)
+	_, text = splitSpeakerPrefix(text)
+	text = subtitleDisplayPunctuationRegex.ReplaceAllString(text, " ")
+	return strings.Join(strings.Fields(text), " ")
+}
+
+func clampSubtitleDisplayInterval(startTime, endTime, lastEndTime time.Duration) (time.Duration, time.Duration) {
+	if startTime < lastEndTime {
+		startTime = lastEndTime
+	}
+	if endTime <= startTime {
+		endTime = startTime + 100*time.Millisecond
+	}
+	return startTime, endTime
+}
+
+func isMajorSubtitleContent(content string, language types.StandardLanguageCode) bool {
+	if isAsianSubtitleLanguage(language) && containsAsianSubtitleRune(content) {
+		return true
+	}
+	return !util.ContainsAlphabetic(content)
+}
+
+func isAsianSubtitleLanguage(language types.StandardLanguageCode) bool {
+	return language == types.LanguageNameSimplifiedChinese ||
+		language == types.LanguageNameTraditionalChinese ||
+		language == types.LanguageNameJapanese ||
+		language == types.LanguageNameKorean ||
+		language == types.LanguageNameThai
+}
+
+func containsAsianSubtitleRune(content string) bool {
+	for _, r := range content {
+		if (r >= 0x4E00 && r <= 0x9FFF) ||
+			(r >= 0x3040 && r <= 0x30FF) ||
+			(r >= 0xAC00 && r <= 0xD7A3) ||
+			(r >= 0x0E00 && r <= 0x0E7F) {
+			return true
+		}
+	}
+	return false
+}
+
 func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, withTts bool) error {
 	assPath := filepath.Join(stepParam.TaskBasePath, "formatted_subtitles.ass")
+	subtitlePath := subtitlePathForEmbed(stepParam)
 
-	if err := srtToAss(stepParam.BilingualSrtFilePath, assPath, isHorizontal, stepParam); err != nil {
+	if err := srtToAss(subtitlePath, assPath, isHorizontal, stepParam); err != nil {
 		log.GetLogger().Error("embedSubtitles srtToAss error", zap.Any("step param", stepParam), zap.Error(err))
 		return fmt.Errorf("embedSubtitles srtToAss error: %w", err)
 	}
@@ -324,28 +526,10 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 	cwd, _ := os.Getwd()
 	absAssPath := filepath.Join(cwd, assPath)
 
-	// Generate filename: YYYY-MM-DD_<video_id>_<type>_embed.mp4
-	now := time.Now()
-	dateStr := now.Format("2006-01-02")
+	outputFileName := buildEmbeddedVideoFileName(stepParam, isHorizontal, time.Now())
 
-	// Extract video ID from URL or use task ID
-	videoID := filepath.Base(stepParam.TaskBasePath)
-	if strings.Contains(stepParam.Link, "youtube.com") || strings.Contains(stepParam.Link, "youtu.be") {
-		if id := extractYouTubeID(stepParam.Link); id != "" {
-			videoID = id
-		}
-	} else if strings.Contains(stepParam.Link, "local:") {
-		localPath := strings.TrimPrefix(stepParam.Link, "local:")
-		videoID = strings.TrimSuffix(filepath.Base(localPath), filepath.Ext(localPath))
-	}
-
-	fileType := "vertical"
-	if isHorizontal {
-		fileType = "horizontal"
-	}
-	outputFileName := fmt.Sprintf("%s_%s_%s_embed.mp4", dateStr, videoID, fileType)
-
-	outputPath := filepath.Join(cwd, "output", outputFileName)
+	outputRelPath := filepath.Join("output", outputFileName)
+	outputPath := filepath.Join(cwd, outputRelPath)
 	os.MkdirAll(filepath.Dir(outputPath), 0755)
 
 	cmd := exec.Command(storage.FfmpegPath, "-y", "-i", input, "-vf", fmt.Sprintf("ass=%s", strings.ReplaceAll(absAssPath, "\\", "/")), "-c:a", "aac", "-b:a", "192k", outputPath)
@@ -354,7 +538,15 @@ func embedSubtitles(stepParam *types.SubtitleTaskStepParam, isHorizontal bool, w
 		log.GetLogger().Error("embedSubtitles embed subtitle into video ffmpeg error", zap.String("video path", stepParam.InputVideoPath), zap.String("output", string(output)), zap.Error(err))
 		return fmt.Errorf("embedSubtitles embed subtitle into video ffmpeg error: %w", err)
 	}
+	stepParam.EmbeddedVideoFilePath = outputRelPath
 	return nil
+}
+
+func subtitlePathForEmbed(stepParam *types.SubtitleTaskStepParam) string {
+	if stepParam.SubtitleResultType == types.SubtitleResultTypeTargetOnly {
+		return filepath.Join(stepParam.TaskBasePath, types.SubtitleTaskTargetLanguageSrtFileName)
+	}
+	return stepParam.BilingualSrtFilePath
 }
 
 func extractYouTubeID(url string) string {

@@ -17,6 +17,9 @@ type StartVideoSubtitleTaskReq struct {
 	VerticalMajorTitle        string   `json:"vertical_major_title"`
 	VerticalMinorTitle        string   `json:"vertical_minor_title"`
 	OriginLanguageWordOneLine int      `json:"origin_language_word_one_line"`
+	LLMProfile                string   `json:"llm_profile"`
+	STTProfile                string   `json:"stt_profile"`
+	TTSProfile                string   `json:"tts_profile"`
 }
 
 type StartVideoSubtitleTaskResData struct {
@@ -53,6 +56,7 @@ type GetVideoSubtitleTaskResData struct {
 	SubtitleInfo      []*SubtitleInfo `json:"subtitle_info"`
 	TargetLanguage    string          `json:"target_language"`
 	SpeechDownloadUrl string          `json:"speech_download_url"`
+	VideoDownloadUrl  string          `json:"video_download_url"`
 }
 
 type GetVideoSubtitleTaskRes struct {

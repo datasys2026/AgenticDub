@@ -4,31 +4,35 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"krillin-ai/internal/translator"
+	xaiauth "krillin-ai/internal/auth/xai"
+	"krillin-ai/internal/providers/llm"
+	"krillin-ai/internal/service"
 )
 
 var (
-	targetLang  string
-	outputDir   string
-	model       string
-	strategy    string
-	verbose     bool
-	apiKey      string
-	voice       string
-	language    string
-	ttsModel    string
+	targetLang    string
+	outputDir     string
+	model         string
+	strategy      string
+	verbose       bool
+	apiKey        string
+	voice         string
+	language      string
+	ttsModel      string
+	xaiTokenPath  string
+	xaiBaseURL    string
+	xaiProbeModel string
 )
 
 const (
@@ -38,9 +42,9 @@ const (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "krilin-ai",
+	Use:   "agenticdub",
 	Short: "AI 影片翻譯配音工具",
-	Long:  `KrillinAI - 影片翻譯配音工具`,
+	Long:  `AgenticDub - 影片翻譯配音工具`,
 }
 
 var runCmd = &cobra.Command{
@@ -48,7 +52,7 @@ var runCmd = &cobra.Command{
 	Short: "執行完整翻譯流程",
 	Long:  `執行影片翻譯配音流程。`,
 	Args:  cobra.ExactArgs(1),
-	Run:  runVideo,
+	Run:   runVideo,
 }
 
 func runVideo(cmd *cobra.Command, args []string) {
@@ -60,6 +64,12 @@ func runVideo(cmd *cobra.Command, args []string) {
 			apiKey = "datasys2026"
 		}
 	}
+	if outputDir == "" {
+		outputDir = "./output"
+	}
+	if model == "" {
+		model = "aiark/gemma4-e2b"
+	}
 
 	fmt.Printf("🎬 開始處理影片: %s\n", input)
 	fmt.Printf("   目標語言: %s\n", targetLang)
@@ -67,432 +77,28 @@ func runVideo(cmd *cobra.Command, args []string) {
 	fmt.Printf("   翻譯策略: %s\n", strategy)
 	fmt.Printf("   TTS 模型: %s (%s - %s)\n", ttsModel, voice, language)
 
-	os.MkdirAll(outputDir, 0755)
-
-	audioFile, err := extractAudio(input)
+	res, err := service.RunLegacyCLIPipeline(cmd.Context(), service.LegacyCLIPipelineOptions{
+		Input:       input,
+		TargetLang:  targetLang,
+		OutputDir:   outputDir,
+		Strategy:    strategy,
+		Model:       model,
+		APIKey:      apiKey,
+		Voice:       voice,
+		Lang:        language,
+		STTEndpoint: STTEndpoint,
+		LLMEndpoint: LLMEndpoint,
+		TTSEndpoint: TTSEndpoint,
+	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ 音頻提取失敗: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ 流程失敗: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.Remove(audioFile)
-	fmt.Printf("✅ 音頻已提取: %s\n", audioFile)
 
-	fmt.Printf("🔄 正在進行語音辨識 (STT)...\n")
-	segments, err := transcribeToSegments(audioFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ STT 失敗: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("✅ STT 完成 (%d 個片段)\n", len(segments))
-
-	transcript := &translator.Transcript{
-		Segments: segments,
-		Language: "en",
-	}
-
-	fmt.Printf("🔄 正在翻譯字幕 (3-step)...\n")
-	translatedSegments, err := translateAll(transcript)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ 翻譯失敗: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("✅ 翻譯完成\n")
-
-	srtFile := filepath.Join(outputDir, "subtitles.srt")
-	gen := translator.NewSRTGenerator()
-	srtContent := gen.Generate(translatedSegments)
-	os.WriteFile(srtFile, []byte(srtContent), 0644)
-	fmt.Printf("✅ 字幕已生成: %s\n", srtFile)
-
-	fmt.Printf("🔄 正在生成語音 (TTS)...\n")
-	dubbedFile, err := synthesizeAll(translatedSegments)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ TTS 失敗: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("✅ 語音已生成: %s\n", dubbedFile)
-
-	fmt.Printf("🔄 正在燒錄字幕到影片...\n")
-	mergedFile, err := burnSubtitles(input, dubbedFile, srtFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ 燒錄字幕失敗: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("✅ 字幕已燒錄: %s\n", mergedFile)
-
-	fmt.Printf("\n✅ 流程完成!\n")
-	fmt.Printf("   字幕檔: %s\n", srtFile)
-	fmt.Printf("   配音檔: %s\n", dubbedFile)
-	fmt.Printf("   影片檔: %s\n", mergedFile)
-}
-
-type STTResult struct {
-	Text        string  `json:"text"`
-	Language    string  `json:"language"`
-	Duration    float64 `json:"duration"`
-	Segments    []struct {
-		Start float64 `json:"start"`
-		End   float64 `json:"end"`
-		Text  string  `json:"text"`
-	} `json:"segments"`
-}
-
-func extractAudio(input string) (string, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get CWD: %w", err)
-	}
-	fmt.Printf("   📂 CWD: %s\n", cwd)
-	fmt.Printf("   📂 Input arg: %s\n", input)
-
-	absInput, err := filepath.Abs(input)
-	if err != nil {
-		return "", err
-	}
-
-	absOutputDir, err := filepath.Abs(outputDir)
-	if err != nil {
-		return "", err
-	}
-	fmt.Printf("   📂 Input: %s -> %s\n", input, absInput)
-	fmt.Printf("   📂 Output dir: %s -> %s\n", outputDir, absOutputDir)
-
-	os.MkdirAll(absOutputDir, 0755)
-	audioFile := filepath.Join(absOutputDir, "audio.wav")
-	fmt.Printf("   📂 Audio output: %s\n", audioFile)
-
-	var cmd *exec.Cmd
-	if strings.HasPrefix(input, "http://") || strings.HasPrefix(input, "https://") {
-		fmt.Printf("   📥 下載影片...\n")
-		videoFile := filepath.Join(absOutputDir, "video.mp4")
-		cmd = exec.Command("yt-dlp", "-f", "best[ext=mp4]/best",
-			"-o", videoFile, input)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("yt-dlp failed: %w", err)
-		}
-		defer os.Remove(videoFile)
-
-		cmd = exec.Command("ffmpeg", "-i", videoFile,
-			"-vn", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",
-			audioFile, "-y")
-	} else {
-		cmd = exec.Command("ffmpeg", "-i", absInput,
-			"-vn", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",
-			audioFile, "-y")
-	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	fmt.Printf("   🔧 Running FFmpeg...\n")
-	runErr := cmd.Run()
-	if runErr != nil {
-		fmt.Printf("   ❌ FFmpeg error: %v\n", runErr)
-		return "", fmt.Errorf("ffmpeg failed: %w", runErr)
-	}
-
-	fmt.Printf("   ✅ FFmpeg completed\n")
-	return audioFile, nil
-}
-
-func transcribeToSegments(audioFile string) ([]translator.Segment, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	part, err := writer.CreateFormFile("file", filepath.Base(audioFile))
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.Open(audioFile)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	if _, err := io.Copy(part, f); err != nil {
-		return nil, err
-	}
-
-	writer.WriteField("model", "faster-whisper-large-v3-fp16")
-	writer.WriteField("response_format", "verbose_json")
-
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", STTEndpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	fmt.Printf("   🔍 STT request to: %s\n", STTEndpoint)
-	fmt.Printf("   🔍 Audio file: %s (size: %d)\n", audioFile, func() int64 {
-		info, _ := os.Stat(audioFile)
-		if info == nil {
-			return 0
-		}
-		return info.Size()
-	}())
-
-	client := &http.Client{Timeout: 600 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	fmt.Printf("   🔍 STT response status: %s\n", resp.Status)
-	fmt.Printf("   🔍 STT response headers: %v\n", resp.Header)
-
-	var result STTResult
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	fmt.Printf("   🔍 STT result: text length=%d, segments=%d\n", len(result.Text), len(result.Segments))
-
-	segments := make([]translator.Segment, len(result.Segments))
-	for i, seg := range result.Segments {
-		segments[i] = translator.Segment{
-			Index:    i,
-			Start:    seg.Start,
-			End:      seg.End,
-			Original: seg.Text,
-		}
-	}
-
-	return segments, nil
-}
-
-type AiarkLLM struct {
-	model string
-	apiKey string
-}
-
-func (l *AiarkLLM) ChatCompletion(ctx context.Context, messages []translator.Message) (*translator.ChatCompletionResponse, error) {
-	payload := map[string]interface{}{
-		"model": l.model,
-		"messages": messages,
-	}
-
-	jsonData, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", LLMEndpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+l.apiKey)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no response from LLM")
-	}
-
-	return &translator.ChatCompletionResponse{
-		Content: result.Choices[0].Message.Content,
-	}, nil
-}
-
-func (l *AiarkLLM) Name() string {
-	return "aiark-llm"
-}
-
-func translateAll(transcript *translator.Transcript) ([]translator.Segment, error) {
-	llmModel := model
-	if llmModel == "" {
-		llmModel = "aiark/gemma4-e2b"
-	}
-
-	llm := &AiarkLLM{model: llmModel, apiKey: apiKey}
-	trans := translator.NewReflectiveTranslator(llm)
-	chunker := translator.NewChunker(translator.DefaultChunkerConfig())
-
-	chunks := chunker.Split(transcript)
-	fmt.Printf("   📝 共 %d 個翻譯區塊\n", len(chunks))
-
-	allSegments := make([]translator.Segment, 0)
-
-	for i, chunk := range chunks {
-		fmt.Printf("   📝 翻譯區塊 %d/%d...\n", i+1, len(chunks))
-		chunk.TargetLang = targetLang
-
-		if err := trans.TranslateChunk(context.Background(), chunk); err != nil {
-			fmt.Printf("   ⚠️ 區塊 %d 翻譯失敗: %v\n", i+1, err)
-			continue
-		}
-
-		allSegments = append(allSegments, chunk.Segments...)
-	}
-
-	return allSegments, nil
-}
-
-type AiarkTTS struct {
-	apiKey      string
-	outputDirAbs string
-}
-
-func (t *AiarkTTS) Synthesize(text string) (string, error) {
-	payload := map[string]interface{}{
-		"input":           text,
-		"voice":           voice,
-		"language":        language,
-		"response_format": "wav",
-	}
-
-	jsonData, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", TTSEndpoint, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+t.apiKey)
-
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		File string `json:"file"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-
-	downloadURL := "http://localhost:8002" + result.File
-	audioPath := filepath.Join(t.outputDirAbs, fmt.Sprintf("audio_%d.wav", time.Now().UnixNano()))
-
-	getReq, _ := http.NewRequest("GET", downloadURL, nil)
-	getReq.Header.Set("Authorization", "Bearer "+t.apiKey)
-
-	dlResp, err := client.Do(getReq)
-	if err != nil {
-		return "", err
-	}
-	defer dlResp.Body.Close()
-
-	f, err := os.Create(audioPath)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, dlResp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return audioPath, nil
-}
-
-func burnSubtitles(videoFile, audioFile, srtFile string) (string, error) {
-	absVideo, _ := filepath.Abs(videoFile)
-	absSrt, _ := filepath.Abs(srtFile)
-	absOutputDir, _ := filepath.Abs(outputDir)
-
-	mergedFile := filepath.Join(absOutputDir, "final_video.mp4")
-
-	cmd := exec.Command("ffmpeg", "-i", absVideo,
-		"-vf", fmt.Sprintf("subtitles='%s':force_style='FontSize=24,PrimaryColour=&HFFFFFF&,Outline=2,Shadow=3'", absSrt),
-		mergedFile, "-y")
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("ffmpeg burn subtitles failed: %w", err)
-	}
-
-	return mergedFile, nil
-}
-
-type timedAudio struct {
-	start    float64
-	duration float64
-	file     string
-}
-
-func synthesizeAll(segments []translator.Segment) (string, error) {
-	absOutputDir, _ := filepath.Abs(outputDir)
-	os.MkdirAll(absOutputDir, 0755)
-
-	tts := &AiarkTTS{apiKey: apiKey, outputDirAbs: absOutputDir}
-
-	var audioFiles []string
-	for i, seg := range segments {
-		if seg.Final == "" {
-			continue
-		}
-		if len(seg.Final) > 200 {
-			seg.Final = seg.Final[:200]
-		}
-
-		fmt.Printf("   🔊 合成 %d/%d...\n", i+1, len(segments))
-		path, err := tts.Synthesize(seg.Final)
-		if err != nil {
-			fmt.Printf("   ⚠️ TTS 失敗: %v\n", err)
-			continue
-		}
-		segments[i].Final = path
-		audioFiles = append(audioFiles, path)
-	}
-
-	if len(audioFiles) == 0 {
-		return "", fmt.Errorf("no audio files generated")
-	}
-
-	dubbedFile := filepath.Join(absOutputDir, "dubbed.wav")
-	if len(audioFiles) == 1 {
-		os.Rename(audioFiles[0], dubbedFile)
-		return dubbedFile, nil
-	}
-
-	concatFile := filepath.Join(absOutputDir, "concat.txt")
-	var concatContent strings.Builder
-	for _, f := range audioFiles {
-		concatContent.WriteString(fmt.Sprintf("file '%s'\n", f))
-	}
-	os.WriteFile(concatFile, []byte(concatContent.String()), 0644)
-	defer os.Remove(concatFile)
-
-	cmd := exec.Command("ffmpeg", "-f", "concat", "-safe", "0", "-i", concatFile, "-acodec", "pcm_s16le", dubbedFile, "-y")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("ffmpeg merge failed: %w", err)
-	}
-
-	for _, f := range audioFiles {
-		os.Remove(f)
-	}
-
-	return dubbedFile, nil
+	fmt.Printf("✅ 流程完成!\n")
+	fmt.Printf("   字幕檔: %s\n", res.SRTFile)
+	fmt.Printf("   配音檔: %s\n", res.DubbedAudio)
+	fmt.Printf("   影片檔: %s\n", res.MergedVideo)
 }
 
 var doctorCmd = &cobra.Command{
@@ -645,17 +251,123 @@ var configCmd = &cobra.Command{
 				apiKey = "datasys2026"
 			}
 		}
-		fmt.Println("=== KrillinAI 設定 ===")
+		fmt.Println("=== AgenticDub 設定 ===")
 		fmt.Printf("目標語言: %s\n", targetLang)
 		fmt.Printf("輸出目錄: %s\n", outputDir)
 		fmt.Printf("翻譯策略: %s\n", strategy)
 		fmt.Printf("LLM 模型: %s\n", model)
 		fmt.Printf("API Key: %s\n", apiKey)
-		fmt.Printf("\n端點:")
+		fmt.Printf("\n端點:\n")
 		fmt.Printf("  STT: %s\n", STTEndpoint)
 		fmt.Printf("  LLM: %s\n", LLMEndpoint)
 		fmt.Printf("  TTS: %s\n", TTSEndpoint)
 	},
+}
+
+var authCmd = &cobra.Command{
+	Use:   "auth",
+	Short: "管理第三方登入狀態",
+}
+
+var xaiAuthCmd = &cobra.Command{
+	Use:   "xai",
+	Short: "管理 xAI / Grok OAuth 狀態",
+}
+
+var xaiAuthStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "檢查 xAI / Grok OAuth token",
+	Run:   runXAIAuthStatus,
+}
+
+var xaiAuthProbeCmd = &cobra.Command{
+	Use:   "probe",
+	Short: "使用 xAI / Grok OAuth token 呼叫 /v1/responses",
+	Run:   runXAIAuthProbe,
+}
+
+func resolveXAITokenPath(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if envValue := os.Getenv("XAI_OAUTH_TOKEN_PATH"); envValue != "" {
+		return envValue
+	}
+	return xaiauth.DefaultTokenPath()
+}
+
+type xaiProbeOptions struct {
+	TokenPath string
+	BaseURL   string
+	Model     string
+	Client    llm.HTTPDoer
+	Stdout    io.Writer
+}
+
+func runXAIProbe(ctx context.Context, opts xaiProbeOptions) error {
+	if opts.TokenPath == "" {
+		opts.TokenPath = xaiauth.DefaultTokenPath()
+	}
+	if opts.BaseURL == "" {
+		opts.BaseURL = "https://api.x.ai/v1"
+	}
+	if opts.Model == "" {
+		opts.Model = "grok-4.20-0309-non-reasoning"
+	}
+	if opts.Stdout == nil {
+		opts.Stdout = os.Stdout
+	}
+
+	store := xaiauth.NewFileTokenStore(opts.TokenPath)
+	provider := llm.NewXAIOAuthProvider(opts.BaseURL, opts.Model, xaiauth.NewFileTokenSource(store), opts.Client)
+	resp, err := provider.ChatCompletion(ctx, []llm.Message{
+		{Role: "user", Content: "Reply with exactly: agenticdub-probe-ok"},
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(opts.Stdout, "xAI OAuth probe: ok\n")
+	fmt.Fprintf(opts.Stdout, "Model: %s\n", opts.Model)
+	fmt.Fprintf(opts.Stdout, "Response: %s\n", strings.TrimSpace(resp.Content))
+	return nil
+}
+
+func runXAIAuthProbe(cmd *cobra.Command, args []string) {
+	path := resolveXAITokenPath(xaiTokenPath)
+	if err := runXAIProbe(cmd.Context(), xaiProbeOptions{
+		TokenPath: path,
+		BaseURL:   xaiBaseURL,
+		Model:     xaiProbeModel,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "xAI OAuth probe failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runXAIAuthStatus(cmd *cobra.Command, args []string) {
+	path := resolveXAITokenPath(xaiTokenPath)
+	store := xaiauth.NewFileTokenStore(path)
+	token, err := store.Load()
+	if err != nil {
+		if errors.Is(err, xaiauth.ErrTokenNotFound) {
+			fmt.Fprintf(os.Stderr, "xAI OAuth token not found: %s\n", path)
+			os.Exit(1)
+		}
+		fmt.Fprintf(os.Stderr, "xAI OAuth token check failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if _, err := xaiauth.NewFileTokenSource(store).BearerToken(cmd.Context()); err != nil {
+		fmt.Fprintf(os.Stderr, "xAI OAuth token invalid: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("xAI OAuth token: ok\n")
+	fmt.Printf("Token path: %s\n", path)
+	if !token.ExpiresAt.IsZero() {
+		fmt.Printf("Expires at: %s\n", token.ExpiresAt.Format(time.RFC3339))
+	}
 }
 
 func init() {
@@ -664,6 +376,10 @@ func init() {
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(authCmd)
+	authCmd.AddCommand(xaiAuthCmd)
+	xaiAuthCmd.AddCommand(xaiAuthStatusCmd)
+	xaiAuthCmd.AddCommand(xaiAuthProbeCmd)
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "詳細輸出")
 	rootCmd.PersistentFlags().StringVar(&apiKey, "api-key", "", "API Key (或 LITELLM_API_KEY)")
@@ -674,6 +390,10 @@ func init() {
 	runCmd.Flags().StringVar(&voice, "voice", "Alex", "TTS 語音")
 	runCmd.Flags().StringVar(&language, "lang", "Chinese", "TTS 語言")
 	runCmd.Flags().StringVar(&ttsModel, "tts-model", "Qwen3-TTS-0.6B", "TTS 模型")
+	xaiAuthStatusCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiTokenPath, "token-path", "", "xAI OAuth token file path")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiBaseURL, "base-url", "https://api.x.ai/v1", "xAI API base URL")
+	xaiAuthProbeCmd.Flags().StringVar(&xaiProbeModel, "model", "grok-4.20-0309-non-reasoning", "xAI model to probe")
 }
 
 func main() {

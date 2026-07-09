@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type STTInput struct {
@@ -17,7 +19,7 @@ type STTOutput struct {
 type LLMInput struct {
 	Text        string
 	TargetLang  string
-	Terminology []Term
+	Terminology []llm.Term
 }
 
 type LLMOutput struct {

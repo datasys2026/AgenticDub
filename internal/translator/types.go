@@ -2,6 +2,8 @@ package translator
 
 import (
 	"context"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type Segment struct {
@@ -38,7 +40,7 @@ type Chunk struct {
 	maxChars      int
 	maxSegments   int
 	theme         string
-	terminology   []Term
+	terminology   []llm.Term
 }
 
 func NewChunk(index int, sourceLang, targetLang string) *Chunk {
@@ -83,30 +85,9 @@ func (c *Chunk) GetText() string {
 	return text[:len(text)-1]
 }
 
-type Term struct {
-	Term       string `json:"term"`
-	Translation string `json:"translation"`
-	Note       string `json:"note,omitempty"`
-}
-
 type TranslationResult struct {
 	Segments []Segment
 	Chunks   []*Chunk
-}
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ChatCompletionResponse struct {
-	Content       string `json:"content"`
-	ReasoningContent string `json:"reasoning_content,omitempty"`
-}
-
-type LLMProvider interface {
-	ChatCompletion(ctx context.Context, messages []Message) (*ChatCompletionResponse, error)
-	Name() string
 }
 
 type Translator interface {
@@ -117,5 +98,5 @@ type Translator interface {
 }
 
 type TerminologyProvider interface {
-	ExtractTerms(ctx context.Context, transcript *Transcript, targetLang string) ([]Term, error)
+	ExtractTerms(ctx context.Context, transcript *Transcript, targetLang string) ([]llm.Term, error)
 }

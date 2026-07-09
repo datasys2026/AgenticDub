@@ -1,68 +1,162 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"krillin-ai/config"
+	"krillin-ai/internal/agent"
+	xaiauth "krillin-ai/internal/auth/xai"
+	"krillin-ai/internal/providers/llm"
+	xaistt "krillin-ai/internal/providers/stt"
+	xaitts "krillin-ai/internal/providers/tts"
 	"krillin-ai/internal/types"
 	"krillin-ai/log"
 	"krillin-ai/pkg/aliyun"
 	"krillin-ai/pkg/fasterwhisper"
+	"krillin-ai/pkg/localtts"
 	"krillin-ai/pkg/openai"
 	"krillin-ai/pkg/whisper"
 	"krillin-ai/pkg/whispercpp"
 	"krillin-ai/pkg/whisperkit"
-	"krillin-ai/pkg/localtts"
+	"path/filepath"
 
 	"go.uber.org/zap"
 )
 
 type Service struct {
-	Transcriber      types.Transcriber
-	ChatCompleter    types.ChatCompleter
-	TtsClient        types.Ttser
-	OssClient        *aliyun.OssClient
-	VoiceCloneClient *aliyun.VoiceCloneClient
+	Transcriber        types.Transcriber
+	ChatCompleter      types.ChatCompleter
+	TtsClient          types.Ttser
+	TtsVoiceCandidates []string
+	OssClient          *aliyun.OssClient
+	VoiceCloneClient   *aliyun.VoiceCloneClient
+	TaskStateDB        *agent.TaskDB
 }
 
 func NewService() *Service {
+	svc, err := NewServiceWithConfig(config.Conf)
+	if err != nil {
+		log.GetLogger().Error("创建服务失败： ", zap.Error(err))
+		return nil
+	}
+	return svc
+}
+
+func NewServiceWithConfig(conf config.Config) (*Service, error) {
 	var transcriber types.Transcriber
 	var chatCompleter types.ChatCompleter
 	var ttsClient types.Ttser
 
-	switch config.Conf.Transcribe.Provider {
+	switch conf.Transcribe.Provider {
 	case "openai":
-		transcriber = whisper.NewClient(config.Conf.Transcribe.Openai.BaseUrl, config.Conf.Transcribe.Openai.ApiKey, config.Conf.Transcribe.Openai.Model, config.Conf.App.Proxy)
+		transcriber = whisper.NewClient(conf.Transcribe.Openai.BaseUrl, conf.Transcribe.Openai.ApiKey, conf.Transcribe.Openai.Model, conf.App.Proxy)
+	case "xai-oauth":
+		tokenSource, err := xaiOAuthTokenSource(conf.XAI.TokenPath)
+		if err != nil {
+			return nil, err
+		}
+		baseURL := conf.Transcribe.Openai.BaseUrl
+		if baseURL == "" {
+			baseURL = conf.XAI.BaseURL
+		}
+		transcriber = xaistt.NewXAIOAuthProvider(baseURL, tokenSource, nil)
 	case "fasterwhisper":
-		transcriber = fasterwhisper.NewFastwhisperProcessor(config.Conf.Transcribe.Fasterwhisper.Model)
+		transcriber = fasterwhisper.NewFastwhisperProcessor(conf.Transcribe.Fasterwhisper.Model)
 	case "whispercpp":
-		transcriber = whispercpp.NewWhispercppProcessor(config.Conf.Transcribe.Whispercpp.Model)
+		transcriber = whispercpp.NewWhispercppProcessor(conf.Transcribe.Whispercpp.Model)
 	case "whisperkit":
-		transcriber = whisperkit.NewWhisperKitProcessor(config.Conf.Transcribe.Whisperkit.Model)
+		transcriber = whisperkit.NewWhisperKitProcessor(conf.Transcribe.Whisperkit.Model)
 	case "aliyun":
-		cc, err := aliyun.NewAsrClient(config.Conf.Transcribe.Aliyun.Speech.AccessKeyId, config.Conf.Transcribe.Aliyun.Speech.AccessKeySecret, config.Conf.Transcribe.Aliyun.Speech.AppKey, true)
+		cc, err := aliyun.NewAsrClient(conf.Transcribe.Aliyun.Speech.AccessKeyId, conf.Transcribe.Aliyun.Speech.AccessKeySecret, conf.Transcribe.Aliyun.Speech.AppKey, true)
 		if err != nil {
 			log.GetLogger().Error("创建阿里云语音识别客户端失败： ", zap.Error(err))
-			return nil
+			return nil, fmt.Errorf("failed to create aliyun transcriber: %w", err)
 		}
 		transcriber = cc
+	default:
+		return nil, fmt.Errorf("unsupported transcribe provider: %s", conf.Transcribe.Provider)
 	}
-	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", config.Conf.Transcribe.Provider))
+	log.GetLogger().Info("当前选择的转录源： ", zap.String("transcriber", conf.Transcribe.Provider))
 
-	chatCompleter = openai.NewClient(config.Conf.Llm.BaseUrl, config.Conf.Llm.ApiKey, config.Conf.App.Proxy)
-
-	switch config.Conf.Tts.Provider {
+	switch conf.Llm.Provider {
 	case "openai":
-		ttsClient = openai.NewClient(config.Conf.Tts.Openai.BaseUrl, config.Conf.Tts.Openai.ApiKey, config.Conf.App.Proxy)
+		provider := llm.NewOpenAIProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model, conf.Llm.ProxyAddr)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	case "aiark":
+		provider := llm.NewAiarkLLMProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	case "xai-oauth":
+		baseURL := conf.Llm.BaseURL
+		if baseURL == "" {
+			baseURL = conf.XAI.BaseURL
+		}
+		tokenSource, err := xaiOAuthTokenSource(conf.XAI.TokenPath)
+		if err != nil {
+			return nil, err
+		}
+		provider := llm.NewXAIOAuthProvider(baseURL, conf.Llm.Model, tokenSource, nil)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	default:
+		provider := llm.NewOpenAIProvider(conf.Llm.BaseURL, conf.Llm.ApiKey, conf.Llm.Model, conf.Llm.ProxyAddr)
+		chatCompleter = llm.NewChatCompleterAdapter(provider)
+	}
+	log.GetLogger().Info("当前选择的LLM： ", zap.String("llm", conf.Llm.Provider))
+
+	switch conf.Tts.Provider {
+	case "openai":
+		ttsClient = openai.NewClient(conf.Tts.Openai.BaseUrl, conf.Tts.Openai.ApiKey, conf.Tts.Openai.Model, conf.App.Proxy)
+	case "xai-oauth":
+		tokenSource, err := xaiOAuthTokenSource(conf.XAI.TokenPath)
+		if err != nil {
+			return nil, err
+		}
+		baseURL := conf.Tts.Openai.BaseUrl
+		if baseURL == "" {
+			baseURL = conf.XAI.BaseURL
+		}
+		ttsClient = xaitts.NewXAIOAuthClient(baseURL, tokenSource, nil)
 	case "aliyun":
-		ttsClient = aliyun.NewTtsClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey)
+		ttsClient = aliyun.NewTtsClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey)
 	case "edge-tts":
 		ttsClient = localtts.NewEdgeTtsClient()
+	default:
+		return nil, fmt.Errorf("unsupported tts provider: %s", conf.Tts.Provider)
+	}
+
+	taskDB, err := agent.NewTaskDB(filepath.Join("tasks", "task_state.db"))
+	if err != nil {
+		log.GetLogger().Warn("初始化 TaskState DB 失败，将降级为仅内存任务状态跟踪", zap.Error(err))
+		taskDB = nil
 	}
 
 	return &Service{
-		Transcriber:      transcriber,
-		ChatCompleter:    chatCompleter,
-		TtsClient:        ttsClient,
-		OssClient:        aliyun.NewOssClient(config.Conf.Transcribe.Aliyun.Oss.AccessKeyId, config.Conf.Transcribe.Aliyun.Oss.AccessKeySecret, config.Conf.Transcribe.Aliyun.Oss.Bucket),
-		VoiceCloneClient: aliyun.NewVoiceCloneClient(config.Conf.Tts.Aliyun.Speech.AccessKeyId, config.Conf.Tts.Aliyun.Speech.AccessKeySecret, config.Conf.Tts.Aliyun.Speech.AppKey),
+		Transcriber:        transcriber,
+		ChatCompleter:      chatCompleter,
+		TtsClient:          ttsClient,
+		TtsVoiceCandidates: ttsVoiceCandidates(conf),
+		OssClient:          aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
+		VoiceCloneClient:   aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
+		TaskStateDB:        taskDB,
+	}, nil
+}
+
+func ttsVoiceCandidates(conf config.Config) []string {
+	if len(conf.Tts.Voices) > 0 {
+		return append([]string(nil), conf.Tts.Voices...)
 	}
+	if conf.Tts.Provider == "xai-oauth" {
+		return []string{"eve", "ara", "rex", "sal", "leo"}
+	}
+	return []string{"Ryan"}
+}
+
+func xaiOAuthTokenSource(tokenPath string) (*xaiauth.FileTokenSource, error) {
+	if tokenPath == "" {
+		tokenPath = xaiauth.DefaultTokenPath()
+	}
+	tokenSource := xaiauth.NewFileTokenSource(xaiauth.NewFileTokenStore(tokenPath))
+	if _, err := tokenSource.BearerToken(context.Background()); err != nil {
+		return nil, fmt.Errorf("xAI OAuth token unavailable: %w", err)
+	}
+	return tokenSource, nil
 }

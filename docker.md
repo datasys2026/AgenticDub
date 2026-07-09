@@ -1,4 +1,8 @@
-# Docker Deployment Guide
+# Docker Deployment Guide (Legacy / Unverified)
+
+Docker deployment is currently a legacy, unverified path inherited from the upstream project. The primary supported development and runtime paths are the local Go server, CLI, desktop app, and MCP server.
+
+The examples below are kept as reference only. Do not treat the published image name or compose snippets as current AgenticDub release instructions until Docker support is rebuilt and verified.
 
 ## Quick Start
 First, prepare the configuration file, setting the server listening port to `8888` and the server listening address to `0.0.0.0`.
@@ -26,7 +30,7 @@ services:
 ```
 
 ## Persisting Models
-If using the fasterwhisper model, KrillinAI will automatically download the necessary files to the `/app/models` and `/app/bin` directories. These files will be lost when the container is deleted. To persist the models, you can map these two directories to a directory on the host.
+If using the fasterwhisper model, AgenticDub will automatically download the necessary files to the `/app/models` and `/app/bin` directories. These files will be lost when the container is deleted. To persist the models, you can map these two directories to a directory on the host.
 
 ### Starting with docker run
 ```bash

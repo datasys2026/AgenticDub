@@ -3,26 +3,28 @@ package agent
 import (
 	"strings"
 	"sync"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type TerminologyMemory struct {
 	mu     sync.RWMutex
-	terms  map[string]Term
+	terms  map[string]llm.Term
 }
 
 func NewTerminologyMemory() *TerminologyMemory {
 	return &TerminologyMemory{
-		terms: make(map[string]Term),
+		terms: make(map[string]llm.Term),
 	}
 }
 
-func (m *TerminologyMemory) Add(term Term) {
+func (m *TerminologyMemory) Add(term llm.Term) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.terms[term.Term] = term
 }
 
-func (m *TerminologyMemory) Get(term string) *Term {
+func (m *TerminologyMemory) Get(term string) *llm.Term {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if t, ok := m.terms[term]; ok {
@@ -31,10 +33,10 @@ func (m *TerminologyMemory) Get(term string) *Term {
 	return nil
 }
 
-func (m *TerminologyMemory) List() []Term {
+func (m *TerminologyMemory) List() []llm.Term {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	terms := make([]Term, 0, len(m.terms))
+	terms := make([]llm.Term, 0, len(m.terms))
 	for _, t := range m.terms {
 		terms = append(terms, t)
 	}
@@ -44,7 +46,7 @@ func (m *TerminologyMemory) List() []Term {
 func (m *TerminologyMemory) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.terms = make(map[string]Term)
+	m.terms = make(map[string]llm.Term)
 }
 
 func (m *TerminologyMemory) Delete(term string) {
@@ -53,7 +55,7 @@ func (m *TerminologyMemory) Delete(term string) {
 	delete(m.terms, term)
 }
 
-func (m *TerminologyMemory) Update(term string, newTerm Term) {
+func (m *TerminologyMemory) Update(term string, newTerm llm.Term) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.terms[term] = newTerm
@@ -71,22 +73,22 @@ func (m *TerminologyMemory) ApplyToText(text string) string {
 
 type ConversationMemory struct {
 	mu       sync.RWMutex
-	messages []Message
+	messages []llm.Message
 }
 
 func NewConversationMemory() *ConversationMemory {
 	return &ConversationMemory{
-		messages: make([]Message, 0),
+		messages: make([]llm.Message, 0),
 	}
 }
 
 func (m *ConversationMemory) Add(role, content string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.messages = append(m.messages, Message{Role: role, Content: content})
+	m.messages = append(m.messages, llm.Message{Role: role, Content: content})
 }
 
-func (m *ConversationMemory) GetHistory(limit int) []Message {
+func (m *ConversationMemory) GetHistory(limit int) []llm.Message {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if limit <= 0 || limit > len(m.messages) {
@@ -98,10 +100,10 @@ func (m *ConversationMemory) GetHistory(limit int) []Message {
 func (m *ConversationMemory) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.messages = make([]Message, 0)
+	m.messages = make([]llm.Message, 0)
 }
 
-func (m *ConversationMemory) Messages() []Message {
+func (m *ConversationMemory) Messages() []llm.Message {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.messages

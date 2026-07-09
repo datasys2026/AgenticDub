@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type ReflectiveTranslator struct {
-	llm         LLMProvider
+	llm         llm.LLMProvider
 	maxRetries  int
 	batchSize   int
 }
 
-func NewReflectiveTranslator(llm LLMProvider) *ReflectiveTranslator {
+func NewReflectiveTranslator(llm llm.LLMProvider) *ReflectiveTranslator {
 	return &ReflectiveTranslator{
 		llm:        llm,
 		maxRetries: 3,
@@ -24,7 +26,7 @@ func NewReflectiveTranslator(llm LLMProvider) *ReflectiveTranslator {
 func (t *ReflectiveTranslator) DirectTranslate(ctx context.Context, chunk *Chunk) error {
 	prompt := t.buildDirectPrompt(chunk)
 
-	messages := []Message{
+	messages := []llm.Message{
 		{Role: "user", Content: prompt},
 	}
 
@@ -51,7 +53,7 @@ func (t *ReflectiveTranslator) DirectTranslate(ctx context.Context, chunk *Chunk
 func (t *ReflectiveTranslator) ReflectTranslate(ctx context.Context, chunk *Chunk) error {
 	prompt := t.buildReflectPrompt(chunk)
 
-	messages := []Message{
+	messages := []llm.Message{
 		{Role: "user", Content: prompt},
 	}
 
@@ -78,7 +80,7 @@ func (t *ReflectiveTranslator) ReflectTranslate(ctx context.Context, chunk *Chun
 func (t *ReflectiveTranslator) FinalTranslate(ctx context.Context, chunk *Chunk) error {
 	prompt := t.buildFinalPrompt(chunk)
 
-	messages := []Message{
+	messages := []llm.Message{
 		{Role: "user", Content: prompt},
 	}
 

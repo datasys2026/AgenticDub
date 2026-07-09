@@ -77,6 +77,7 @@ type Tts struct {
 	Provider string                 `toml:"provider"`
 	Openai   OpenaiCompatibleConfig `toml:"openai"`
 	Aliyun   AliyunTtsConfig        `toml:"aliyun"`
+	Voices   []string               `toml:"voices"`
 }
 
 type OpenAiWhisper struct {
@@ -85,11 +86,46 @@ type OpenAiWhisper struct {
 }
 
 type Config struct {
-	App        App                    `toml:"app"`
-	Server     Server                 `toml:"server"`
-	Llm        OpenaiCompatibleConfig `toml:"llm"`
-	Transcribe Transcribe             `toml:"transcribe"`
-	Tts        Tts                    `toml:"tts"`
+	App        App                 `toml:"app"`
+	Server     Server              `toml:"server"`
+	Llm        LLMConfig           `toml:"llm"`
+	Transcribe Transcribe          `toml:"transcribe"`
+	Tts        Tts                 `toml:"tts"`
+	Mcp        McpConfig           `toml:"mcp"`
+	XAI        XAIConfig           `toml:"xai_oauth"`
+	Models     ModelRegistryConfig `toml:"models"`
+}
+
+type McpConfig struct {
+	ServerURL string `toml:"server_url"`
+}
+
+type XAIConfig struct {
+	BaseURL   string `toml:"base_url"`
+	TokenPath string `toml:"token_path"`
+}
+
+type LLMConfig struct {
+	Provider  string `toml:"provider"`
+	Model     string `toml:"model"`
+	BaseURL   string `toml:"base_url"`
+	ApiKey    string `toml:"api_key"`
+	ProxyAddr string `toml:"proxy_addr"`
+}
+
+type ModelProfileConfig struct {
+	Provider  string   `toml:"provider"`
+	BaseURL   string   `toml:"base_url"`
+	ApiKey    string   `toml:"api_key"`
+	ApiKeyEnv string   `toml:"api_key_env"`
+	Model     string   `toml:"model"`
+	Voices    []string `toml:"voices"`
+}
+
+type ModelRegistryConfig struct {
+	LLM map[string]ModelProfileConfig `toml:"llm"`
+	STT map[string]ModelProfileConfig `toml:"stt"`
+	TTS map[string]ModelProfileConfig `toml:"tts"`
 }
 
 var Conf = Config{
@@ -105,8 +141,14 @@ var Conf = Config{
 		Host: "127.0.0.1",
 		Port: 8888,
 	},
-	Llm: OpenaiCompatibleConfig{
-		Model: "gpt-4o-mini",
+	Llm: LLMConfig{
+		Provider: "aiark",
+		Model:    "aiark/gemma4-e2b",
+		BaseURL:  "https://aiark.com.tw/v1",
+	},
+	XAI: XAIConfig{
+		BaseURL:   "https://api.x.ai/v1",
+		TokenPath: "~/.agenticdub/auth/xai.json",
 	},
 	Transcribe: Transcribe{
 		Provider:              "openai",
@@ -130,16 +172,101 @@ var Conf = Config{
 			Model: "gpt-4o-mini-tts",
 		},
 	},
+	Models: ModelRegistryConfig{
+		LLM: map[string]ModelProfileConfig{
+			"fast": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/qwen36-35b",
+			},
+			"quality": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-31b-qat",
+			},
+			"external": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-26b-qat",
+			},
+			"light": {
+				Provider:  "aiark",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_LLM_API_KEY",
+				Model:     "aiark/gemma4-e4b",
+			},
+			"grok": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "grok-4.20-0309-non-reasoning",
+			},
+		},
+		STT: map[string]ModelProfileConfig{
+			"default": {
+				Provider:  "openai",
+				BaseURL:   "https://aiark.com.tw/v1",
+				ApiKeyEnv: "AIARK_STT_API_KEY",
+				Model:     "aiark/faster-whisper-large-v3-fp16",
+			},
+			"xai": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "xai-stt",
+			},
+		},
+		TTS: map[string]ModelProfileConfig{
+			"default": {
+				Provider:  "openai",
+				BaseURL:   "https://aiark.com.tw/tts/v1",
+				ApiKeyEnv: "AIARK_TTS_API_KEY",
+				Model:     "aiark/qwen3-tts-0.6b-customvoice",
+				Voices: []string{
+					"Vivian",
+					"Serena",
+					"Uncle_Fu",
+					"Dylan",
+					"Eric",
+					"Ryan",
+					"Aiden",
+					"Ono_Anna",
+					"Sohee",
+				},
+			},
+			"xai": {
+				Provider: "xai-oauth",
+				BaseURL:  "https://api.x.ai/v1",
+				Model:    "xai-tts",
+				Voices: []string{
+					"eve",
+					"ara",
+					"rex",
+					"sal",
+					"leo",
+				},
+			},
+		},
+	},
 }
 
 // 检查必要的配置是否完整
 func validateConfig() error {
+	// 检查LLM服务提供商
+	switch Conf.Llm.Provider {
+	case "openai", "aiark", "ollama", "xai-oauth":
+	default:
+		return fmt.Errorf("不支持的LLM提供商: %s（可选：openai, aiark, ollama, xai-oauth）", Conf.Llm.Provider)
+	}
+
 	// 检查转写服务提供商配置
 	switch Conf.Transcribe.Provider {
 	case "openai":
 		if Conf.Transcribe.Openai.ApiKey == "" {
 			return errors.New("使用OpenAI转录服务需要配置 OpenAI API Key")
 		}
+	case "xai-oauth":
 	case "fasterwhisper":
 		if Conf.Transcribe.Fasterwhisper.Model != "tiny" && Conf.Transcribe.Fasterwhisper.Model != "medium" && Conf.Transcribe.Fasterwhisper.Model != "large-v2" {
 			return errors.New("检测到开启了fasterwhisper，但模型选型配置不正确，请检查配置")
@@ -153,12 +280,11 @@ func validateConfig() error {
 			return errors.New("检测到开启了whisperkit，但模型选型配置不正确，请检查配置")
 		}
 	case "whispercpp":
-		if runtime.GOOS != "windows" { // 当前先仅支持win，模型仅支持large-v2，最小化产品
-			log.GetLogger().Error("whispercpp only support windows", zap.String("current os", runtime.GOOS))
-			return fmt.Errorf("whispercpp only support windows")
+		if runtime.GOOS != "windows" {
+			return errors.New("whispercpp只支持windows")
 		}
 		if Conf.Transcribe.Whispercpp.Model != "large-v2" {
-			return errors.New("检测到开启了whisper.cpp，但模型选型配置不正确，请检查配置")
+			return errors.New("检测到开启了whispercpp，但模型选型配置不正确，请检查配置")
 		}
 	case "aliyun":
 		if Conf.Transcribe.Aliyun.Speech.AccessKeyId == "" || Conf.Transcribe.Aliyun.Speech.AccessKeySecret == "" || Conf.Transcribe.Aliyun.Speech.AppKey == "" {

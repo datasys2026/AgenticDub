@@ -4,14 +4,16 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"krillin-ai/internal/providers/llm"
 )
 
 type TextTrimmer struct {
-	llm          LLMProvider
+	llm          llm.LLMProvider
 	minDuration  float64
 }
 
-func NewTextTrimmer(llm LLMProvider) *TextTrimmer {
+func NewTextTrimmer(llm llm.LLMProvider) *TextTrimmer {
 	return &TextTrimmer{
 		llm:         llm,
 		minDuration: 1.0,
@@ -65,7 +67,7 @@ Original: %s
 
 Output only a JSON object: {"result": "trimmed text"}`, maxChars, text)
 
-	resp, err := t.llm.ChatCompletion(ctx, []Message{
+	resp, err := t.llm.ChatCompletion(ctx, []llm.Message{
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
