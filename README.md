@@ -2,14 +2,14 @@
 
 # AgenticDub
 
-AI 影片翻譯配音工具（Go CLI）
+AI 影片翻譯配音工具（Go HTTP backend + MCP proxy）
 
 </div>
 
 ## 概覽
 
 ```
-影片 → 音軌分離 → STT → 字幕切割 → LLM 翻譯 → [HITL 審核] → TTS 合成 → 字幕燒錄 → 合併影片
+影片 → 下載 → STT → LLM 翻譯 → 翻譯稽核 → HITL 人工審核 → TTS → 字幕燒錄
 ```
 
 **開發目標：** Agentic 化 — planner、tool use、memory、state machine 讓流程可規劃、可 interruption 恢復。
@@ -29,16 +29,16 @@ go build -o agenticdub-mcp ./cmd/mcp/ && ./agenticdub-mcp
 ```
 cmd/
   server/              # Web server entry point (Gin)
-  mcp/                 # MCP server entry point
-  cli/                 # CLI entry point (cobra)
-  desktop/             # 桌面版入口
+  mcp/                 # thin stdio MCP proxy to HTTP backend
+  cli/                 # legacy standalone CLI entry point
 
 internal/
   agent/               # Agent 核心
     hitl/              # HITL 審核系統
-  api/                 # Gin API handlers
   service/             # 核心商業邏輯
-    audio2subtitle.go  # STT + 翻譯 pipeline
+    audio2subtitle.go  # Gin pipeline: 下載/STT/翻譯/稽核/HITL
+    legacy_cli_pipeline.go # CLI legacy pipeline
+    task_state.go      # SQLite-backed task state
     srt2speech.go      # TTS 合成
     srt_embed.go       # 字幕燒錄
   deps/                # 環境依賴檢查
@@ -55,6 +55,17 @@ pkg/
   aliyun/              # 阿里雲 STT/TTS/OSS
   localtts/            # Edge-TTS
 ```
+
+主管線是 `cmd/server` 的 Gin HTTP backend：`StartSubtitleTask` 負責下載 → STT → LLM 翻譯 → 翻譯稽核 → HITL 人工審核 → TTS → 字幕燒錄。`cmd/mcp` 只是一層 thin stdio MCP proxy，透過 HTTP 呼叫 backend。`cmd/cli run` 保留為獨立 legacy pipeline（`internal/service/legacy_cli_pipeline.go`），直連 aiark 端點並使用 `internal/translator`。
+
+Python 審核工具鏈維持在 `scripts/build_subtitle_review.py`、`subtitle_review_viewer.html`、`build_semantic_blocks.py`，搭配 `.agents/skills/framecue` 使用。
+
+## Archive Layout
+
+- `archive/docs-upstream`：上游 krillin-ai 多語文件
+- `archive/_code-legacy`：desktop UI、whisperx
+- `archive/runtime`：舊 task/output 產物，gitignored
+- `archive/scripts-superseded`：已被取代的腳本
 
 ## MCP Server
 
@@ -117,6 +128,8 @@ agenticdub auth xai probe --token-path ~/.hermes/auth.json --model grok-4.20-030
 
 目前已完成 token store、OAuth bearer LLM/STT/TTS providers、`grok`/`xai` model profiles、狀態檢查與 live entitlement probe。Browser login 尚未接入；OAuth surface 仍可能受 Grok subscription / entitlement 限制。
 
+架構細節見 `docs/architecture/xai-oauth-provider.md`。
+
 ### 使用範例
 
 ```
@@ -145,7 +158,7 @@ Claude：使用 translate_video tool
 | 3 | TTS providers (openai, aliyun, edge-tts) | ✅ |
 | 4 | Video compose (ffmpeg) + subtitle burn | ✅ |
 | 5 | **Agentic 重構** — planner + tools + memory + state machine | 🔄 |
-| 6 | SQLite task DB — 可恢復 pipeline | 🔜 |
+| 6 | SQLite task DB — 可恢復 pipeline | ✅ / 🔄 |
 | 7 | Reflective translation (3-step) | 🔜 |
 
 ## HITL 審核流程
