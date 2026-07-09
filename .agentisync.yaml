@@ -1,0 +1,14 @@
+version: 1
+canonical: .agents/skills
+consumers:
+  codex:
+    path: .agents/skills
+  openclaw:
+    path: .agents/skills
+targets:
+  claude:
+    path: .claude/skills
+    mode: symlink
+  opencode:
+    path: .opencode/skills
+    mode: symlink
