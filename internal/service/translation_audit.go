@@ -91,6 +91,15 @@ func (s Service) auditAndRepairTranslations(basePath string, items []*Translated
 		}
 		repaired := strings.TrimSpace(result.RepairedTranslation)
 		if result.ShouldRepair && repaired != "" {
+			if unsafeTranslationAuditRepair(requestItems, result, repaired) {
+				log.GetLogger().Warn("translation audit skipped unsafe repair",
+					zap.Int("segment", segmentID),
+					zap.Int("index", result.Index),
+					zap.String("origin", items[result.Index].OriginText),
+					zap.String("before", items[result.Index].TranslatedText),
+					zap.String("after", repaired))
+				continue
+			}
 			log.GetLogger().Info("translation audit repaired subtitle",
 				zap.Int("segment", segmentID),
 				zap.Int("index", result.Index),
@@ -131,6 +140,38 @@ func buildTranslationAuditRequestItems(items []*TranslatedItem) []translationAud
 		requestItems = append(requestItems, requestItem)
 	}
 	return requestItems
+}
+
+func unsafeTranslationAuditRepair(requestItems []translationAuditRequestItem, result translationAuditResult, repaired string) bool {
+	var request *translationAuditRequestItem
+	for i := range requestItems {
+		if requestItems[i].Index == result.Index {
+			request = &requestItems[i]
+			break
+		}
+	}
+	if request == nil {
+		return false
+	}
+
+	sourceWords := strings.Fields(request.Source)
+	if len(sourceWords) <= 4 && cjkRuneCount(repaired) > 8 {
+		return true
+	}
+
+	sourceLower := strings.ToLower(request.Source)
+	previousLower := strings.ToLower(request.PreviousSource)
+	followingLower := strings.ToLower(request.FollowingSource)
+	for _, missing := range result.MissingMeaning {
+		missingLower := strings.ToLower(strings.TrimSpace(missing))
+		if missingLower == "" || strings.Contains(sourceLower, missingLower) {
+			continue
+		}
+		if strings.Contains(previousLower, missingLower) || strings.Contains(followingLower, missingLower) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseTranslationAuditResponse(response string) ([]translationAuditResult, error) {

@@ -73,6 +73,34 @@ func TestParseTranslationAuditResponseAcceptsMarkdownCodeBlock(t *testing.T) {
 	}
 }
 
+func TestUnsafeTranslationAuditRepairRejectsCrossSentenceRepair(t *testing.T) {
+	requests := []translationAuditRequestItem{{
+		Index:           1,
+		Source:          "not only do you need to figure out what's going on in latent space",
+		Translation:     "不僅要搞清楚潛在空間裡發生了什麼",
+		FollowingSource: "and deterministic space",
+	}}
+	result := translationAuditResult{
+		Index:          1,
+		MissingMeaning: []string{"deterministic space"},
+	}
+	if !unsafeTranslationAuditRepair(requests, result, "以及確定性空間") {
+		t.Fatal("expected cross-sentence repair to be rejected")
+	}
+}
+
+func TestUnsafeTranslationAuditRepairRejectsLongFillerRepair(t *testing.T) {
+	requests := []translationAuditRequestItem{{
+		Index:       1,
+		Source:      "You know,",
+		Translation: "你知道",
+	}}
+	result := translationAuditResult{Index: 1}
+	if !unsafeTranslationAuditRepair(requests, result, "這大概就是那兩件很棒的事") {
+		t.Fatal("expected long filler repair to be rejected")
+	}
+}
+
 func TestExtractProtectedTermsKeepsTechnicalTerms(t *testing.T) {
 	got := extractProtectedTerms("Claude uses OpenCL on Linux with xAI Grok and GPU APIs.")
 	joined := strings.Join(got, ",")

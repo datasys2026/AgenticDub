@@ -50,7 +50,7 @@ func TestWaitForReviewReturnsErrorOnReject(t *testing.T) {
 		TaskPtr:      taskPtr,
 	}
 
-	err = (Service{}).waitForReview(stepParam, filepath.Join(taskDir, "review.txt"), context.Background())
+	err = (Service{}).waitForReview(stepParam, filepath.Join(taskDir, "review.txt"), context.Background(), nil)
 	if err == nil || !strings.Contains(err.Error(), "review rejected") {
 		t.Fatalf("expected review rejected error, got %v", err)
 	}

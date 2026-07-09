@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"krillin-ai/internal/agent"
 	"krillin-ai/internal/agent/hitl"
 	"krillin-ai/internal/dto"
 	"krillin-ai/internal/storage"
@@ -86,6 +87,11 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		Status:   types.SubtitleTaskStatusProcessing,
 	}
 	storage.SubtitleTasks.Store(taskId, taskPtr)
+	taskState := agent.NewTaskState(taskId)
+	syncLegacyStep(taskPtr, taskState.CurrentStep)
+	if err := s.persistTaskState(ctx, taskState); err != nil {
+		log.GetLogger().Warn("StartSubtitleTask 持久化初始状态失败", zap.Any("task_id", taskId), zap.Error(err))
+	}
 
 	// 处理声音克隆源
 	var voiceCloneAudioUrl string
@@ -134,6 +140,9 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 				buf = buf[:runtime.Stack(buf, false)]
 				log.GetLogger().Error("autoVideoSubtitle panic", zap.Any("panic:", r), zap.Any("stack:", buf))
 				stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
+				taskState.Fail(fmt.Sprintf("%v", r))
+				syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+				_ = s.persistTaskState(ctx, taskState)
 			}
 		}()
 		// 新版流程：链接->本地音频文件->视频信息获取（若有）->本地字幕文件->语言合成->视频合成->字幕文件链接生成
@@ -143,6 +152,9 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			log.GetLogger().Error("StartVideoSubtitleTask linkToFile err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
 		s.populateTaskTitle(ctx, &stepParam)
@@ -154,13 +166,26 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 		//	stepParam.TaskPtr.FailReason = "get video info error"
 		//	return
 		//}
+
+		advanceTaskState(taskState, agent.StepSTT)
+		taskState.SetStatus(agent.StatusProcessing)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
+
 		err = s.audioToSubtitle(ctx, &stepParam)
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask audioToSubtitle err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
+		advanceTaskState(taskState, agent.StepTranslate)
+		taskState.SetStatus(agent.StatusProcessing)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
 
 		// HITL: Generate review.txt and wait for review.
 		// bilingual_srt.srt contains line1=original, line2=target unless translation-on-top is requested.
@@ -172,6 +197,9 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			log.GetLogger().Error("StartVideoSubtitleTask CreateReview err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
 		doc = s.auditAndSuggestReview(stepParam.TaskBasePath, doc, stepParam.TargetLanguage)
@@ -182,38 +210,62 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			log.GetLogger().Error("StartVideoSubtitleTask SaveReview err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
 
 		// Set status to pending review
 		stepParam.TaskPtr.Status = types.SubtitleTaskStatusPendingReview
 		stepParam.TaskPtr.ProcessPct = 90
+		taskState.WaitForHITL()
+		taskState.SetStatus(agent.StatusPendingReview)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
 		log.GetLogger().Info("video subtitle task pending review", zap.String("taskId", taskId), zap.String("reviewPath", reviewPath))
 
 		// Wait for review (blocking loop)
-		if err := s.waitForReview(&stepParam, reviewPath, ctx); err != nil {
+		if err := s.waitForReview(&stepParam, reviewPath, ctx, taskState); err != nil {
 			log.GetLogger().Warn("video subtitle task stopped after review", zap.String("taskId", taskId), zap.Error(err))
 			if stepParam.TaskPtr.Status != types.SubtitleTaskStatusFailed {
 				stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 				stepParam.TaskPtr.FailReason = err.Error()
 			}
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
 
 		// Review approved, continue with TTS
 		log.GetLogger().Info("video subtitle continue after review", zap.String("taskId", taskId))
+		advanceTaskState(taskState, agent.StepTTS)
+		taskState.SetStatus(agent.StatusProcessing)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
 		err = s.srtFileToSpeech(ctx, &stepParam)
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask srtFileToSpeech err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
+		advanceTaskState(taskState, agent.StepEmbed)
+		taskState.SetStatus(agent.StatusProcessing)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
 		err = s.embedSubtitles(ctx, &stepParam)
 		if err != nil {
 			log.GetLogger().Error("StartVideoSubtitleTask embedSubtitles err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
 		err = s.uploadSubtitles(ctx, &stepParam)
@@ -221,8 +273,15 @@ func (s Service) StartSubtitleTask(req dto.StartVideoSubtitleTaskReq) (*dto.Star
 			log.GetLogger().Error("StartVideoSubtitleTask uploadSubtitles err", zap.Any("req", req), zap.Error(err))
 			stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 			stepParam.TaskPtr.FailReason = err.Error()
+			taskState.Fail(err.Error())
+			syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+			_ = s.persistTaskState(ctx, taskState)
 			return
 		}
+		advanceTaskState(taskState, agent.StepDone)
+		taskState.SetStatus(agent.StatusDone)
+		syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+		_ = s.persistTaskState(ctx, taskState)
 
 		log.GetLogger().Info("video subtitle task end", zap.String("taskId", taskId))
 	}()
@@ -271,7 +330,7 @@ func (s Service) getHITLService() hitl.ReviewService {
 	)
 }
 
-func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPath string, ctx context.Context) error {
+func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPath string, ctx context.Context, taskState *agent.TaskState) error {
 	ticker := time.NewTicker(reviewPollInterval)
 	defer ticker.Stop()
 
@@ -297,11 +356,23 @@ func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPat
 							log.GetLogger().Error("waitForReview applyApprovedReview err", zap.Error(err))
 							return err
 						}
+						if taskState != nil {
+							taskState.ApproveHITL()
+							advanceTaskState(taskState, agent.StepTTS)
+							taskState.SetStatus(agent.StatusProcessing)
+							syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+							_ = s.persistTaskState(ctx, taskState)
+						}
 						return nil
 					}
 					if status.Status == hitl.StatusRejected {
 						stepParam.TaskPtr.Status = types.SubtitleTaskStatusFailed
 						stepParam.TaskPtr.FailReason = status.RejectReason
+						if taskState != nil {
+							taskState.RejectHITL(status.RejectReason)
+							syncLegacyStep(stepParam.TaskPtr, taskState.CurrentStep)
+							_ = s.persistTaskState(ctx, taskState)
+						}
 						return fmt.Errorf("review rejected: %s", status.RejectReason)
 					}
 				}
@@ -309,6 +380,13 @@ func (s Service) waitForReview(stepParam *types.SubtitleTaskStepParam, reviewPat
 
 			// Check if status changed from pending_review without a marker.
 			if taskPtr.Status == types.SubtitleTaskStatusProcessing && taskPtr.ProcessPct > 90 {
+				if taskState != nil {
+					taskState.ApproveHITL()
+					advanceTaskState(taskState, agent.StepTTS)
+					taskState.SetStatus(agent.StatusProcessing)
+					syncLegacyStep(taskPtr, taskState.CurrentStep)
+					_ = s.persistTaskState(ctx, taskState)
+				}
 				return nil
 			}
 		}

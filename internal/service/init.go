@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"krillin-ai/config"
+	"krillin-ai/internal/agent"
 	xaiauth "krillin-ai/internal/auth/xai"
 	"krillin-ai/internal/providers/llm"
 	xaistt "krillin-ai/internal/providers/stt"
@@ -17,6 +18,7 @@ import (
 	"krillin-ai/pkg/whisper"
 	"krillin-ai/pkg/whispercpp"
 	"krillin-ai/pkg/whisperkit"
+	"path/filepath"
 
 	"go.uber.org/zap"
 )
@@ -28,6 +30,7 @@ type Service struct {
 	TtsVoiceCandidates []string
 	OssClient          *aliyun.OssClient
 	VoiceCloneClient   *aliyun.VoiceCloneClient
+	TaskStateDB        *agent.TaskDB
 }
 
 func NewService() *Service {
@@ -120,6 +123,12 @@ func NewServiceWithConfig(conf config.Config) (*Service, error) {
 		return nil, fmt.Errorf("unsupported tts provider: %s", conf.Tts.Provider)
 	}
 
+	taskDB, err := agent.NewTaskDB(filepath.Join("tasks", "task_state.db"))
+	if err != nil {
+		log.GetLogger().Warn("初始化 TaskState DB 失败，将降级为仅内存任务状态跟踪", zap.Error(err))
+		taskDB = nil
+	}
+
 	return &Service{
 		Transcriber:        transcriber,
 		ChatCompleter:      chatCompleter,
@@ -127,6 +136,7 @@ func NewServiceWithConfig(conf config.Config) (*Service, error) {
 		TtsVoiceCandidates: ttsVoiceCandidates(conf),
 		OssClient:          aliyun.NewOssClient(conf.Transcribe.Aliyun.Oss.AccessKeyId, conf.Transcribe.Aliyun.Oss.AccessKeySecret, conf.Transcribe.Aliyun.Oss.Bucket),
 		VoiceCloneClient:   aliyun.NewVoiceCloneClient(conf.Tts.Aliyun.Speech.AccessKeyId, conf.Tts.Aliyun.Speech.AccessKeySecret, conf.Tts.Aliyun.Speech.AppKey),
+		TaskStateDB:        taskDB,
 	}, nil
 }
 

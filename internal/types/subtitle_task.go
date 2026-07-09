@@ -241,7 +241,9 @@ The translation may be concise and natural for speech, but it must not omit caus
 2. Do not mark a translation incomplete only because it is natural or condensed.
 3. Mark should_repair=true if meaning is missing, mistranslated, or the translation is mostly untranslated source text.
 4. If should_repair=true, repaired_translation must be a complete, natural, speakable subtitle.
-5. Output JSON only. No markdown, no explanations outside JSON.
+5. Repair only the source sentence. Never add meaning from previous_source or following_source.
+6. If the source is a short filler such as "you know", "like", "yeah", "right", "I mean", or "and then", keep the repair equally short.
+7. Output JSON only. No markdown, no explanations outside JSON.
 
 [OUTPUT SCHEMA]
 {
